@@ -5,6 +5,8 @@
    palette has no red, and a risk tool needs an alarm colour). 4px rhythm. */
 
 :root {
+  color-scheme: light;
+
   /* ---- surfaces ---- */
   --canvas: #f6f3ea;          /* app background — warm parchment */
   --surface: #ffffff;         /* cards, panels */
@@ -22,7 +24,6 @@
   --accent-strong: #17462d;
   --accent-wash: #e5efe8;
   --accent-ring: rgba(31, 90, 58, 0.26);
-  --brand-grad-2: #6f8d45;    /* olive, for the brand mark gradient */
 
   /* ---- hairlines & shadows (warm-tinted) ---- */
   --border: #e8e1d1;
@@ -52,6 +53,10 @@
   --risk-mid: #a97f1c;
   --risk-high: #a83a2c;
 
+  /* ---- misc theming hooks ---- */
+  --skeleton-mid: #efe8d9;
+  --pulse-ring: rgba(31, 90, 58, 0.45);
+
   /* ---- radii ---- */
   --r-sm: 8px;
   --r-md: 12px;
@@ -70,4 +75,52 @@
   /* ---- layout ---- */
   --sidebar-w: 244px;
   --content-max: 1180px;
+}
+
+/* ================= dark theme =================
+   A warm dark (built off the palette's #2B1F16), not a cold black. The
+   `data-theme` attribute is set synchronously by an inline script in
+   index.html from localStorage or the OS setting, so there's no flash. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --canvas: #1b1611;
+  --surface: #251f18;
+  --surface-sunken: #201a14;
+  --surface-hover: #2f2820;
+
+  --ink: #f2ede2;
+  --ink-secondary: #b9ad9c;
+  --ink-muted: #8b7f6e;
+  --ink-on-accent: #10241a;      /* dark text on the lighter dark-mode accent */
+
+  --accent: #5fae7f;
+  --accent-strong: #78c194;
+  --accent-wash: #223528;
+  --accent-ring: rgba(95, 174, 119, 0.34);
+
+  --border: #3a322a;
+  --border-strong: #4b4137;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.36);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.34), 0 10px 26px rgba(0, 0, 0, 0.42);
+  --shadow-pop: 0 14px 44px rgba(0, 0, 0, 0.55);
+
+  --ok: #62b481;             --ok-wash: #1f3327;
+  --info: #97b95f;           --info-wash: #2a331d;
+  --warn: #e2ba4c;           --warn-wash: #3a3016;
+  --alt: #cf9163;            --alt-wash: #382a1e;
+  --danger: #e37a6d;         --danger-wash: #3a231f;
+
+  --ok-bar:    #3f9d5a;
+  --info-bar:  #9cbb57;
+  --alt-bar:   #c58150;
+  --warn-bar:  #e2b435;
+  --danger-bar:#dc6154;
+
+  --risk-low: #62b481;
+  --risk-mid: #e2ba4c;
+  --risk-high: #e37a6d;
+
+  --skeleton-mid: #332b22;
+  --pulse-ring: rgba(98, 180, 129, 0.42);
 }

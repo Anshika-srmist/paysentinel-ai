@@ -2,7 +2,19 @@ import { NavLink } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Icon } from './Icon.jsx'
 import { api } from '../api/client.js'
+import { useTheme } from '../hooks/useTheme.js'
 import './AppShell.css'
+
+function ThemeToggle() {
+  const { theme, toggle } = useTheme()
+  const dark = theme === 'dark'
+  return (
+    <button className="themetoggle" onClick={toggle} title={dark ? 'Switch to light' : 'Switch to dark'}>
+      <Icon name={dark ? 'sun' : 'moon'} size={15} strokeWidth={2} />
+      {dark ? 'Light mode' : 'Dark mode'}
+    </button>
+  )
+}
 
 const NAV = [
   { to: '/', label: 'Overview', icon: 'overview', end: true },
@@ -72,6 +84,7 @@ export function AppShell({ children }) {
         </nav>
 
         <div className="shell__nav-foot">
+          <ThemeToggle />
           <ApiStatus />
         </div>
       </aside>

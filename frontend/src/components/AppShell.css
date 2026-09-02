@@ -20,8 +20,9 @@
   width: 34px; height: 34px; flex: none;
   border-radius: 10px;
   color: #fff;
-  background: linear-gradient(155deg, var(--accent) 15%, var(--brand-grad-2) 130%);
-  box-shadow: 0 4px 12px var(--accent-ring);
+  /* fixed brand colours — identical in light and dark */
+  background: linear-gradient(155deg, #1f5a3a 15%, #6f8d45 130%);
+  box-shadow: 0 4px 12px rgba(31, 90, 58, 0.3);
 }
 .brand__text { display: flex; flex-direction: column; line-height: 1.15; }
 .brand__name { font-weight: 700; font-size: 15.5px; letter-spacing: -0.01em; color: var(--ink); }
@@ -41,7 +42,17 @@
 .nav__item.is-active { background: var(--accent-wash); color: var(--accent-strong); font-weight: 600; }
 .nav__item.is-active svg { color: var(--accent); }
 
-.shell__nav-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); }
+.shell__nav-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); }
+
+.themetoggle {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 10px; border-radius: 10px;
+  font-weight: 500; font-size: 13px; color: var(--ink-secondary);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.themetoggle:hover { background: var(--surface-hover); color: var(--ink); }
+.themetoggle svg { color: var(--ink-muted); }
+.themetoggle:hover svg { color: var(--accent); }
 
 .apistatus { display: flex; align-items: flex-start; gap: 9px; padding: 8px 8px 4px; font-size: 12px; }
 .apistatus__dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; flex: none; background: var(--ink-muted); }

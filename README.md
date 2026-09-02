@@ -158,7 +158,8 @@ scoring or a smaller forest is the lever if real-time volume ever matters.
 ## Dashboard (Day 4)
 
 `frontend/` — Vite + React, no UI framework (a hand-built design system, so it
-reads as designed rather than generated). Three pages, all polling the API:
+reads as designed rather than generated). Light/dark themes (warm-dark, follows
+the OS setting until toggled; choice persists). Pages, all polling the API:
 
 - **Overview** (`/`) — stat tiles (payments, success rate, failed, flagged,
   revenue at risk), a "decisions by action" breakdown, a throughput sparkline,
