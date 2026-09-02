@@ -84,43 +84,49 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --canvas: #1b1611;
-  --surface: #251f18;
-  --surface-sunken: #201a14;
-  --surface-hover: #2f2820;
+  /* Wider canvas/surface gap so cards lift off the ground instead of
+     blending into one flat field. */
+  --canvas: #16110c;
+  --surface: #241d15;
+  --surface-sunken: #1c1610;
+  --surface-hover: #322a20;
 
-  --ink: #f2ede2;
-  --ink-secondary: #b9ad9c;
-  --ink-muted: #8b7f6e;
-  --ink-on-accent: #10241a;      /* dark text on the lighter dark-mode accent */
+  --ink: #f3eee3;
+  --ink-secondary: #bcb0a0;
+  --ink-muted: #8e8272;
+  --ink-on-accent: #0d2015;      /* dark text on the lighter dark-mode accent */
 
-  --accent: #5fae7f;
-  --accent-strong: #78c194;
-  --accent-wash: #223528;
-  --accent-ring: rgba(95, 174, 119, 0.34);
+  --accent: #4fb488;            /* crisp emerald-pine — distinct from the olive */
+  --accent-strong: #6fc7a1;
+  --accent-wash: #1a3a2b;
+  --accent-ring: rgba(79, 180, 136, 0.36);
 
-  --border: #3a322a;
-  --border-strong: #4b4137;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.36);
-  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.34), 0 10px 26px rgba(0, 0, 0, 0.42);
-  --shadow-pop: 0 14px 44px rgba(0, 0, 0, 0.55);
+  --border: #40372c;
+  --border-strong: #524739;
+  /* faint light rim + a real drop shadow: on a dark ground a plain shadow
+     is invisible, so the 1px inset highlight does the "lift". */
+  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.03), 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.035), 0 12px 30px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.62);
 
-  --ok: #62b481;             --ok-wash: #1f3327;
-  --info: #97b95f;           --info-wash: #2a331d;
-  --warn: #e2ba4c;           --warn-wash: #3a3016;
-  --alt: #cf9163;            --alt-wash: #382a1e;
-  --danger: #e37a6d;         --danger-wash: #3a231f;
+  /* APPROVE emerald and RETRY khaki-sage are pushed far apart in hue and
+     saturation so the two greens don't read as the same colour. */
+  --ok: #53c692;             --ok-wash: #143726;
+  --info: #b1bd68;           --info-wash: #33380f;
+  --warn: #e6bd4e;           --warn-wash: #3c3116;
+  --alt: #d3945f;            --alt-wash: #3a2a1e;
+  --danger: #e67d6e;         --danger-wash: #3c231f;
 
-  --ok-bar:    #3f9d5a;
-  --info-bar:  #9cbb57;
-  --alt-bar:   #c58150;
-  --warn-bar:  #e2b435;
-  --danger-bar:#dc6154;
+  --ok-bar:    #31b374;   /* vivid emerald   */
+  --info-bar:  #b8c257;   /* bright khaki    */
+  --alt-bar:   #cc8450;   /* copper          */
+  --warn-bar:  #e6bd35;   /* gold            */
+  --danger-bar:#df6255;   /* terracotta      */
 
-  --risk-low: #62b481;
-  --risk-mid: #e2ba4c;
-  --risk-high: #e37a6d;
+  --risk-low: #53c692;
+  --risk-mid: #e6bd4e;
+  --risk-high: #e67d6e;
 
-  --skeleton-mid: #332b22;
-  --pulse-ring: rgba(98, 180, 129, 0.42);
+  --skeleton-mid: #322a20;
+  --pulse-ring: rgba(83, 198, 146, 0.42);
 }
