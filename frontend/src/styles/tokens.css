@@ -1,0 +1,73 @@
+/* PaySentinel design tokens.
+   Earthy palette: pine-green brand accent on a warm parchment canvas, warm
+   near-black ink, decision semantics mapped onto the palette's greens /
+   mustard / brown, plus one added terracotta for "danger" (the source
+   palette has no red, and a risk tool needs an alarm colour). 4px rhythm. */
+
+:root {
+  /* ---- surfaces ---- */
+  --canvas: #f6f3ea;          /* app background — warm parchment */
+  --surface: #ffffff;         /* cards, panels */
+  --surface-sunken: #faf7ef;  /* insets, table headers */
+  --surface-hover: #f2ede0;   /* row / control hover */
+
+  /* ---- ink ---- */
+  --ink: #2b1f16;             /* primary text (palette #2B1F16) */
+  --ink-secondary: #665849;   /* labels, meta */
+  --ink-muted: #978978;       /* captions, disabled */
+  --ink-on-accent: #ffffff;
+
+  /* ---- brand accent (palette #1F5A3A) ---- */
+  --accent: #1f5a3a;
+  --accent-strong: #17462d;
+  --accent-wash: #e5efe8;
+  --accent-ring: rgba(31, 90, 58, 0.26);
+  --brand-grad-2: #6f8d45;    /* olive, for the brand mark gradient */
+
+  /* ---- hairlines & shadows (warm-tinted) ---- */
+  --border: #e8e1d1;
+  --border-strong: #d8cfb9;
+  --shadow-sm: 0 1px 2px rgba(43, 31, 22, 0.05), 0 1px 3px rgba(43, 31, 22, 0.07);
+  --shadow-md: 0 2px 6px rgba(43, 31, 22, 0.07), 0 8px 24px rgba(43, 31, 22, 0.10);
+  --shadow-pop: 0 12px 40px rgba(43, 31, 22, 0.20);
+
+  /* ---- decision / status semantics ---- */
+  --ok: #1f5a3a;             --ok-wash: #e5efe8;    /* APPROVE — pine (= brand) */
+  --info: #586f34;           --info-wash: #edf1e0;  /* RETRY — olive (#6F8D45), darkened for text */
+  --warn: #7a5b06;           --warn-wash: #f8e6a4;  /* VERIFY — a bright, saturated gold from #E1CC62 (clearly "yellow") */
+  --alt: #7b4a26;            --alt-wash: #ecd7c1;   /* OFFER_ALTERNATIVE — a deep chestnut from #9B6A3A (clearly "brown", redder & darker than the gold) */
+  --danger: #a83a2c;         --danger-wash: #f7e3de; /* HOLD — terracotta (added to harmonise) */
+
+  /* Brighter fills for chart bars, where the colour only needs to be
+     distinguishable, not text-legible — keeps the "Decisions by action"
+     breakdown vivid and each action clearly its own hue. */
+  --ok-bar:    #2f7d46;   /* leaf green   */
+  --info-bar:  #7f9c47;   /* olive        */
+  --alt-bar:   #a5673a;   /* copper       */
+  --warn-bar:  #d8ab2c;   /* bright gold  */
+  --danger-bar:#c5433a;   /* terracotta   */
+
+  /* ---- risk gradient stops (pine -> mustard -> terracotta) ---- */
+  --risk-low: #1f5a3a;
+  --risk-mid: #a97f1c;
+  --risk-high: #a83a2c;
+
+  /* ---- radii ---- */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* ---- type ---- */
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SFMono-Regular', ui-monospace, 'JetBrains Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+
+  /* ---- motion ---- */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur-fast: 130ms;
+  --dur: 200ms;
+
+  /* ---- layout ---- */
+  --sidebar-w: 244px;
+  --content-max: 1180px;
+}

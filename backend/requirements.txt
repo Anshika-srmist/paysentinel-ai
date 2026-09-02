@@ -1,0 +1,25 @@
+# PaySentinel AI — backend dependencies.
+# Versions below are the set this project is developed and tested against
+# (Python 3.11–3.13). If you change the scikit-learn version, regenerate the
+# model with `python ml/train.py` so ml/saved_model.pkl matches — an
+# unpickle across sklearn minor versions warns and can shift predictions.
+
+# --- Web / API ---
+fastapi==0.121.1
+uvicorn[standard]==0.38.0
+sqlalchemy==2.0.44
+pydantic==2.12.4
+
+# --- Simulator / tests ---
+requests==2.32.5
+pytest==8.3.3
+httpx==0.28.1
+
+# --- ML (risk model, Day 2) ---
+pandas==3.0.5
+scikit-learn==1.9.0
+joblib==1.6.0
+
+# --- AI explainability layer (Day 3). Optional: the explainer falls back to
+#     a deterministic template when this is absent or PAYSENTINEL_USE_LLM != 1.
+anthropic==0.69.0
