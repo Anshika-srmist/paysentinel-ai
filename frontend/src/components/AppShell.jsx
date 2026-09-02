@@ -7,6 +7,7 @@ import './AppShell.css'
 const NAV = [
   { to: '/', label: 'Overview', icon: 'overview', end: true },
   { to: '/stream', label: 'Live stream', icon: 'activity' },
+  { to: '/check', label: 'Live check', icon: 'bolt' },
   { to: '/investigation', label: 'Investigation', icon: 'search' },
 ]
 

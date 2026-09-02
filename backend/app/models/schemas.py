@@ -71,3 +71,31 @@ class StatsSummary(BaseModel):
     high_risk: int = 0                        # decisions routed to VERIFY or HOLD
     revenue_at_risk: float = 0.0             # amount tied up in those events
     decisions_by_action: Dict[str, int] = {}
+
+
+class AssessRequest(BaseModel):
+    """A payment *about to happen* — the caller wants a verdict before it moves.
+
+    This is the integration surface: a checkout, a PSP, or a Razorpay webhook
+    posts the attempt here and gets back an action (and why) synchronously.
+    """
+    customer_id: str
+    amount: float
+    payment_method: str
+    transaction_id: Optional[str] = None     # generated if the caller doesn't supply one
+    merchant_id: Optional[str] = None
+    bank: Optional[str] = None
+    device_id: Optional[str] = None
+    event_time: Optional[datetime] = None
+
+
+class AssessResponse(BaseModel):
+    transaction_id: str
+    decision: str                            # APPROVE | RETRY | OFFER_ALTERNATIVE | VERIFY | HOLD
+    safe: bool                               # APPROVE only — a convenience flag for callers
+    risk_score: float
+    recommended_action: Optional[str] = None
+    explanation: Optional[str] = None
+    signals: List[str] = []
+    model_name: Optional[str] = None
+    decision_id: int

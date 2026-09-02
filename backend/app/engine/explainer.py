@@ -109,7 +109,10 @@ def _template_explanation(ctx: ExplanationContext) -> str:
             f"history and a low {score_phrase}."
         )
     else:  # APPROVE
-        first = f"{lead}: {score_phrase} is low and no risk signals fired."
+        if ctx.signals:
+            first = f"{lead}: {score_phrase} is below the review threshold despite the notes below."
+        else:
+            first = f"{lead}: {score_phrase} is low and no risk signals fired."
 
     parts = [first]
     if ctx.signals:

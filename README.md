@@ -109,6 +109,33 @@ readiness probe), and `/stats/summary` now reports `high_risk`,
 `revenue_at_risk`, and a decision breakdown. `GET /payments` and
 `GET /decisions` take `limit` (1–500) + `offset`.
 
+### Integration surface — using PaySentinel *before* a payment moves
+
+Everything above scores a payment that already happened. Two endpoints let a
+real payment flow ask *"is this attempt safe?"* up front:
+
+- **`POST /assess`** — a checkout page, a PSP, or any payment flow posts the
+  attempt (`customer_id`, `amount`, `payment_method`, optional device/bank) and
+  gets back `{ decision, safe, risk_score, explanation, signals }` synchronously.
+  `APPROVE` → let it through, `VERIFY` → step-up challenge, `HOLD` → block. The
+  attempt is stored as `PENDING` so it also appears in the dashboard.
+
+  ```bash
+  curl -X POST https://<api>/assess -H 'content-type: application/json' \
+    -d '{"customer_id":"CUST_42","amount":95000,"payment_method":"CARD","device_id":"NEW_DEVICE"}'
+  # -> {"decision":"HOLD","safe":false,"risk_score":1.0,"explanation":"Held for manual review: …"}
+  ```
+
+  Optional `X-API-Key` gate: set `PAYSENTINEL_API_KEY`.
+
+- **`POST /webhooks/razorpay`** — point a Razorpay (test-mode) webhook here and
+  every `payment.captured` / `payment.failed` event is mapped and scored by the
+  same pipeline (amount de-paise'd, method/error mapped, idempotent on retry).
+  Verifies `X-Razorpay-Signature` when `PAYSENTINEL_RAZORPAY_WEBHOOK_SECRET` is set.
+
+You can't hook into Google Pay / PhonePe internals (closed systems) — but this
+is exactly how a PSP or merchant would consume a risk engine.
+
 ### Operational scripts
 
 ```bash

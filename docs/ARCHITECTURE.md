@@ -182,6 +182,21 @@ records `explanation_source` so the dashboard can show which path produced it.
 | `/decisions/{id}` | GET | Full detail for the Investigation page: event + risk score + explanation + recovery probability + triggered signals + feature snapshot |
 | `/stats/summary` | GET | Counts for the Overview page (total, success, failed, high-risk, revenue at risk, decision breakdown) |
 | `/health` | GET | Readiness probe — DB reachable + risk model loaded (503 if not) |
+| `/assess` | POST | **Pre-payment check** — score an attempt that hasn't happened yet, return `{decision, safe, risk_score, explanation, signals}` synchronously. Stored as `PENDING`. Optional `X-API-Key`. |
+| `/webhooks/razorpay` | POST | Ingest a Razorpay webhook (`payment.captured` / `payment.failed` / …); maps + scores it. Verifies `X-Razorpay-Signature` when a secret is set; idempotent on retry. |
+
+### 7b. Integration surface
+
+`/payments` and the webhook are *post-hoc* (the payment already resolved).
+`/assess` is the **pre-authorisation** path: a merchant checkout, a PSP, or
+Razorpay itself calls it before confirming and acts on the verdict — `APPROVE`
+proceed, `VERIFY` step-up challenge, `HOLD` block. It runs the identical
+pipeline (feature extraction reads the customer's real history), records the
+attempt as `PENDING`, and returns in one round-trip. This is the honest version
+of "connect it to other payment apps": you cannot hook into Google Pay /
+PhonePe internals (closed systems), but this is exactly the shape a payment
+processor consumes a risk engine in. `app/integrations/razorpay.py` holds the
+webhook mapping + HMAC-SHA256 signature check.
 
 ---
 

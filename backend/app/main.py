@@ -8,19 +8,24 @@ and the decision, and exposes them for the dashboard.
 """
 import json
 import os
+import uuid
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.database import Base, SessionLocal, engine, get_db, run_light_migrations
 from app.engine.pipeline import process_event
+from app.integrations import razorpay as rz
 from app.models.risk_model import model_name
-from app.models.orm_models import PaymentEvent, RiskDecision
+from app.models.orm_models import PaymentEvent, RiskDecision, _utcnow
 from app.models.schemas import (
+    AssessRequest,
+    AssessResponse,
     DecisionDetail,
     DecisionListItem,
     PaymentEventIn,
@@ -29,6 +34,15 @@ from app.models.schemas import (
     StatsSummary,
 )
 from app.seed import seed_if_empty
+
+# Optional shared-secret gate for the integration endpoints. Unset => open
+# (fine for the demo). Set PAYSENTINEL_API_KEY to require X-API-Key.
+_API_KEY = os.getenv("PAYSENTINEL_API_KEY", "").strip()
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)):
+    if _API_KEY and x_api_key != _API_KEY:
+        raise HTTPException(status_code=401, detail="invalid or missing X-API-Key")
 
 
 @asynccontextmanager
@@ -103,6 +117,89 @@ def ingest_payment(event: PaymentEventIn, db: Session = Depends(get_db)):
         print(f"[pipeline] failed for {db_event.transaction_id}: {exc}")
 
     return db_event
+
+
+@app.post("/assess", response_model=AssessResponse, dependencies=[Depends(require_api_key)])
+def assess(req: AssessRequest, db: Session = Depends(get_db)):
+    """
+    Score a payment that has *not happened yet* and return an action.
+
+    This is the integration entry point — a checkout page, a PSP, or any
+    payment flow calls this before confirming and gets APPROVE / VERIFY /
+    HOLD (+ a plain-English reason) synchronously. The attempt is recorded
+    with status ``PENDING`` so it also shows up in the dashboard.
+    """
+    txn = req.transaction_id or f"ASSESS_{uuid.uuid4().hex[:10].upper()}"
+    event = PaymentEvent(
+        transaction_id=txn,
+        customer_id=req.customer_id,
+        merchant_id=req.merchant_id,
+        amount=req.amount,
+        payment_method=req.payment_method,
+        bank=req.bank,
+        device_id=req.device_id,
+        status="PENDING",
+        failure_reason=None,
+        event_time=req.event_time or _utcnow(),
+    )
+    db.add(event)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"transaction_id '{txn}' was already assessed")
+    db.refresh(event)
+
+    decision = process_event(db, event)
+    return AssessResponse(
+        transaction_id=txn,
+        decision=decision.decision,
+        safe=decision.decision == "APPROVE",
+        risk_score=float(decision.risk_score),
+        recommended_action=decision.recommended_action,
+        explanation=decision.explanation,
+        signals=json.loads(decision.signals_json) if decision.signals_json else [],
+        model_name=decision.model_name,
+        decision_id=decision.id,
+    )
+
+
+@app.post("/webhooks/razorpay")
+async def razorpay_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    x_razorpay_signature: str | None = Header(default=None),
+):
+    """
+    Ingest a Razorpay webhook (`payment.captured` / `payment.failed` / …).
+    Auth is the Razorpay signature, not the API key. Idempotent on retry.
+    """
+    raw = await request.body()
+    try:
+        rz.verify_signature(raw, x_razorpay_signature)
+        payload = json.loads(raw or b"{}")
+        mapped = rz.to_payment_event(payload)
+    except (rz.WebhookError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail=f"bad webhook: {exc}")
+
+    if mapped is None:
+        return {"received": True, "scored": False, "reason": f"event '{payload.get('event')}' not scored"}
+
+    if db.query(PaymentEvent.id).filter(PaymentEvent.transaction_id == mapped["transaction_id"]).first():
+        return {"received": True, "scored": False, "reason": "already processed"}
+
+    event = PaymentEvent(**mapped)
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    decision = process_event(db, event)
+    return {
+        "received": True,
+        "scored": True,
+        "transaction_id": event.transaction_id,
+        "decision": decision.decision,
+        "risk_score": float(decision.risk_score),
+    }
 
 
 @app.get("/payments", response_model=List[PaymentEventOut])

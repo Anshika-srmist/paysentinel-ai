@@ -6,14 +6,19 @@
 
 const BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '/api'
 
-async function request(path, { signal } = {}) {
+async function request(path, { signal, method = 'GET', body } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     signal,
-    headers: { Accept: 'application/json' },
+    method,
+    headers: {
+      Accept: 'application/json',
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
-    throw new Error(`${res.status} ${res.statusText}${detail ? ` — ${detail.slice(0, 140)}` : ''}`)
+    throw new Error(`${res.status} ${res.statusText}${detail ? ` — ${detail.slice(0, 160)}` : ''}`)
   }
   return res.json()
 }
@@ -32,4 +37,5 @@ export const api = {
     const q = new URLSearchParams({ limit: String(limit), offset: String(offset) })
     return request(`/payments?${q}`, opts)
   },
+  assess: (body, opts = {}) => request('/assess', { ...opts, method: 'POST', body }),
 }

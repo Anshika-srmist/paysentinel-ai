@@ -111,6 +111,22 @@
   .stream__head .hide-sm, .stream__row .stream__cat, .stream__row .stream__time, .stream__chev { display: none; }
 }
 
+/* ============ live check form ============ */
+.checkform { display: grid; gap: 14px; align-self: start; }
+.checkform__presets { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 4px; }
+
+.field { display: grid; gap: 6px; }
+.field > span { font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); }
+
+.seg { display: flex; gap: 4px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 3px; }
+.seg__btn {
+  flex: 1; padding: 7px 4px; border-radius: 6px;
+  font-size: 12px; font-weight: 600; color: var(--ink-secondary);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.seg__btn:hover { color: var(--ink); }
+.seg__btn.is-on { background: var(--surface); color: var(--accent-strong); box-shadow: var(--shadow-sm); }
+
 /* ============ investigation ============ */
 .inv { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
 @media (max-width: 940px) { .inv { grid-template-columns: 1fr; } }
