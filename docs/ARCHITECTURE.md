@@ -185,8 +185,7 @@ records `explanation_source` so the dashboard can show which path produced it.
 | `/assess` | POST | **Pre-payment check** — score an attempt that hasn't happened yet, return `{decision, safe, risk_score, explanation, signals}` synchronously. Stored as `PENDING`. Optional `X-API-Key`. |
 | `/webhooks/razorpay` | POST | Ingest a Razorpay webhook (`payment.captured` / `payment.failed` / …); maps + scores it. Verifies `X-Razorpay-Signature` when a secret is set; idempotent on retry. |
 | `/policy` | GET | The decision rules, thresholds, model feature importances, recovery base rates — powers the Policy page. |
-| `/customers/{id}` | GET | A customer's payment history + the behavioural baseline the model compares against. |
-| `/stats/timeline` | GET | Decisions bucketed by event time + a 10-bin risk-score histogram, for the Overview charts. |
+| `/customers/{id}` | GET | A customer's **aggregate** risk signals (success rate, decision mix, model baseline) — not an itemised transaction log. See §8a. |
 
 ### 7b. Integration surface
 
@@ -257,6 +256,16 @@ Deploy: backend → Render (`backend/render.yaml`), frontend → Vercel
 re-seeds ~140 scored events on each boot (`app/seed.py`, lifespan). Frontend
 reads `VITE_API_BASE_URL` at build time; CORS is `*` unless
 `PAYSENTINEL_CORS_ORIGINS` is set. Full runbook: `DEPLOY.md`.
+
+### 8a. Data scoping
+
+The dashboard shows the **decision stream** and the **risk view of a customer**
+— never a browsable per-customer transaction ledger. `/customers/{id}` returns
+aggregates only (success rate, decision mix, the model's behavioural baseline),
+because a risk analyst needs the customer's risk *pattern*, not surveillance of
+every payment they've made. There are deliberately no time-series "analytics"
+charts of individual traffic for the same reason. (The seeded data is synthetic
+with placeholder ids; the principle is about the product shape, not this demo.)
 
 ---
 

@@ -32,7 +32,7 @@ def test_policy_exposes_rules_thresholds_and_model():
     assert set(p["actions"]) == {"APPROVE", "RETRY", "OFFER_ALTERNATIVE", "VERIFY", "HOLD"}
 
 
-def test_customer_profile_aggregates_history():
+def test_customer_profile_is_aggregate_only():
     cid = f"CUST_INS_{uuid.uuid4().hex[:6]}"
     _seed_customer(cid, n=6)
     prof = client.get(f"/customers/{cid}").json()
@@ -41,18 +41,13 @@ def test_customer_profile_aggregates_history():
     assert prof["success_rate"] == 1.0
     assert prof["history_good"] is True
     assert prof["usual_payment_method"] == "UPI"
-    assert len(prof["history"]) == 6
-    assert prof["history"][0]["decision"] in {"APPROVE", "RETRY", "OFFER_ALTERNATIVE", "VERIFY", "HOLD"}
+    # deliberately NOT an itemised transaction log
+    assert "history" not in prof
 
 
 def test_unknown_customer_is_404():
     assert client.get("/customers/NOBODY_HERE").status_code == 404
 
 
-def test_timeline_buckets_and_histogram():
-    _seed_customer(f"CUST_TL_{uuid.uuid4().hex[:6]}", n=8)
-    tl = client.get("/stats/timeline", params={"buckets": 6}).json()
-    assert len(tl["buckets"]) == 6
-    assert sum(b["total"] for b in tl["buckets"]) >= 8
-    assert len(tl["risk_histogram"]) == 10
-    assert tl["risk_histogram"][0]["lo"] == 0.0 and tl["risk_histogram"][-1]["hi"] == 1.0
+def test_timeline_endpoint_is_gone():
+    assert client.get("/stats/timeline").status_code == 404

@@ -2,12 +2,11 @@ import { Link, useParams } from 'react-router-dom'
 import { PageHeader } from '../components/AppShell.jsx'
 import { Icon } from '../components/Icon.jsx'
 import { StatusChip } from '../components/StatusChip.jsx'
-import { RiskMeter } from '../components/RiskMeter.jsx'
 import { Skeleton } from '../components/Skeleton.jsx'
 import { EmptyState } from '../components/EmptyState.jsx'
 import { usePolling } from '../hooks/usePolling.js'
 import { api } from '../api/client.js'
-import { money, num, pct, timeAgo, shortId } from '../lib/format.js'
+import { money, num, pct } from '../lib/format.js'
 import './pages.css'
 
 function Tile({ label, value, sub, accent }) {
@@ -100,29 +99,11 @@ export function Customer() {
         </section>
       </div>
 
-      <section className="card" style={{ marginTop: 16 }}>
-        <div className="card-head"><h2>Payment history</h2><span className="muted" style={{ fontSize: 12 }}>newest first</span></div>
-        <div style={{ padding: '8px 10px' }}>
-          {data.history.map((h) => {
-            const inner = (
-              <>
-                <div>
-                  <div className="minirow__id mono">{shortId(h.transaction_id)}</div>
-                  <div className="minirow__meta">{h.status} · {timeAgo(h.event_time)}</div>
-                </div>
-                {h.risk_score != null ? <RiskMeter score={h.risk_score} /> : <span />}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span className="minirow__amt tnum">{money(h.amount)}</span>
-                  {h.decision && <StatusChip decision={h.decision} size="sm" />}
-                </div>
-              </>
-            )
-            return h.decision_id
-              ? <Link key={h.transaction_id} to={`/investigation/${h.decision_id}`} className="minirow" style={{ gridTemplateColumns: '1fr auto auto' }}>{inner}</Link>
-              : <div key={h.transaction_id} className="minirow" style={{ gridTemplateColumns: '1fr auto auto' }}>{inner}</div>
-          })}
-        </div>
-      </section>
+      <p className="muted" style={{ fontSize: 12, marginTop: 16, maxWidth: '62ch' }}>
+        This view shows aggregate risk signals only — how often this customer’s payments
+        succeed and what the model treats as their baseline. It is deliberately not an
+        itemised record of their individual transactions.
+      </p>
     </>
   )
 }

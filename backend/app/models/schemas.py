@@ -73,17 +73,13 @@ class StatsSummary(BaseModel):
     decisions_by_action: Dict[str, int] = {}
 
 
-class CustomerHistoryItem(BaseModel):
-    transaction_id: str
-    amount: float
-    status: str
-    event_time: datetime
-    decision: Optional[str] = None
-    risk_score: Optional[float] = None
-    decision_id: Optional[int] = None
-
-
 class CustomerProfile(BaseModel):
+    """
+    Aggregate risk signals for one customer — deliberately NOT an itemised
+    transaction history. A risk analyst needs the customer's risk *pattern*
+    (how often they fail, what the model treats as their baseline), not a
+    browsable ledger of every payment they've made.
+    """
     customer_id: str
     total_events: int
     successful: int
@@ -98,24 +94,6 @@ class CustomerProfile(BaseModel):
     recent_failed_streak: int = 0
     prior_event_count: int = 0
     decisions_by_action: Dict[str, int] = {}
-    history: List[CustomerHistoryItem] = []
-
-
-class TimelineBucket(BaseModel):
-    start: datetime
-    total: int
-    high_risk: int
-
-
-class RiskHistogramBin(BaseModel):
-    lo: float
-    hi: float
-    count: int
-
-
-class Timeline(BaseModel):
-    buckets: List[TimelineBucket] = []
-    risk_histogram: List[RiskHistogramBin] = []
 
 
 class AssessRequest(BaseModel):

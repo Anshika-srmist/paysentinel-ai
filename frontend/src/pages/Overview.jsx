@@ -3,8 +3,6 @@ import { Link } from 'react-router-dom'
 import { PageHeader, LiveBadge } from '../components/AppShell.jsx'
 import { Icon } from '../components/Icon.jsx'
 import { StatusChip } from '../components/StatusChip.jsx'
-import { TimelineChart } from '../components/TimelineChart.jsx'
-import { Histogram } from '../components/Histogram.jsx'
 import { Skeleton } from '../components/Skeleton.jsx'
 import { EmptyState } from '../components/EmptyState.jsx'
 import { usePolling } from '../hooks/usePolling.js'
@@ -30,7 +28,6 @@ function Tile({ label, value, sub, icon, accent }) {
 export function Overview() {
   const stats = usePolling((signal) => api.stats({ signal }), 5000)
   const feed = usePolling((signal) => api.decisions({ limit: 60, signal }), 5000)
-  const tl = usePolling((signal) => api.timeline({ buckets: 20, signal }), 15000)
 
   const s = stats.data
   const decisions = feed.data || []
@@ -83,57 +80,25 @@ export function Overview() {
         )}
       </div>
 
-      <div className="two-col">
-        <section className="card">
-          <div className="card-head">
-            <h2>Decisions by action</h2>
-            <span className="muted" style={{ fontSize: 12 }}>escalation order</span>
-          </div>
-          <div className="card-pad">
-            {loading ? <Skeleton h={180} /> : (
-              <div className="bd">
-                {breakdown.map(({ key, meta, count, widthPct, sharePct }) => (
-                  <div className="bd__row" key={key}>
-                    <StatusChip decision={key} size="sm" />
-                    <div className="bd__track">
-                      <div className="bd__fill" style={{ width: `${Math.max(count ? 3 : 0, widthPct)}%`, background: `var(${BAR_VAR[meta.role]})` }} />
-                    </div>
-                    <div className="bd__num">{num(count)}<span className="bd__pct"> · {pct(sharePct)}</span></div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="card">
-          <div className="card-head"><h2>Decisions over time</h2><span className="muted" style={{ fontSize: 12 }}>by event time</span></div>
-          <div className="card-pad">
-            {tl.loading && !tl.data ? <Skeleton h={132} /> : (
-              <>
-                <TimelineChart buckets={tl.data?.buckets || []} />
-                <div className="legend">
-                  <span><i style={{ background: 'var(--ok-bar)' }} /> cleared</span>
-                  <span><i style={{ background: 'var(--danger-bar)' }} /> flagged (verify / hold)</span>
-                </div>
-              </>
-            )}
-          </div>
-        </section>
-      </div>
-
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head">
-          <h2>Risk score distribution</h2>
-          <span className="muted" style={{ fontSize: 12 }}>all scored payments</span>
+          <h2>Decisions by action</h2>
+          <span className="muted" style={{ fontSize: 12 }}>escalation order</span>
         </div>
         <div className="card-pad">
-          {tl.loading && !tl.data ? <Skeleton h={140} /> : (
-            <Histogram bins={tl.data?.risk_histogram || []} />
+          {loading ? <Skeleton h={180} /> : (
+            <div className="bd">
+              {breakdown.map(({ key, meta, count, widthPct, sharePct }) => (
+                <div className="bd__row" key={key}>
+                  <StatusChip decision={key} size="sm" />
+                  <div className="bd__track">
+                    <div className="bd__fill" style={{ width: `${Math.max(count ? 3 : 0, widthPct)}%`, background: `var(${BAR_VAR[meta.role]})` }} />
+                  </div>
+                  <div className="bd__num">{num(count)}<span className="bd__pct"> · {pct(sharePct)}</span></div>
+                </div>
+              ))}
+            </div>
           )}
-          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-            Most traffic scores low; the tail above 0.9 is what the policy holds for manual review.
-          </p>
         </div>
       </section>
 

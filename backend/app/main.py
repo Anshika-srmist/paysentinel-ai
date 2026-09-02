@@ -10,7 +10,6 @@ import json
 import os
 import uuid
 from contextlib import asynccontextmanager
-from datetime import timedelta
 from typing import List
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -28,17 +27,13 @@ from app.models.orm_models import PaymentEvent, RiskDecision, _utcnow
 from app.models.schemas import (
     AssessRequest,
     AssessResponse,
-    CustomerHistoryItem,
     CustomerProfile,
     DecisionDetail,
     DecisionListItem,
     PaymentEventIn,
     PaymentEventOut,
     RiskDecisionOut,
-    RiskHistogramBin,
     StatsSummary,
-    Timeline,
-    TimelineBucket,
 )
 from app.seed import seed_if_empty
 
@@ -319,51 +314,6 @@ def stats_summary(db: Session = Depends(get_db)):
     )
 
 
-@app.get("/stats/timeline", response_model=Timeline)
-def stats_timeline(buckets: int = Query(24, ge=4, le=96), db: Session = Depends(get_db)):
-    """
-    Decisions over time (bucketed by the payment's event_time, which the
-    seeder backdates) plus a risk-score histogram — for the Overview charts.
-    """
-    rows = (
-        db.query(PaymentEvent.event_time, RiskDecision.decision, RiskDecision.risk_score)
-        .join(RiskDecision, RiskDecision.event_id == PaymentEvent.id)
-        .all()
-    )
-    if not rows:
-        return Timeline()
-
-    times = [r[0] for r in rows]
-    t_min, t_max = min(times), max(times)
-    span = (t_max - t_min).total_seconds() or 1.0
-    step = span / buckets
-
-    bucket_total = [0] * buckets
-    bucket_risky = [0] * buckets
-    hist = [0] * 10
-    for event_time, decision, score in rows:
-        idx = min(buckets - 1, int((event_time - t_min).total_seconds() / step))
-        bucket_total[idx] += 1
-        if decision in AT_RISK_DECISIONS:
-            bucket_risky[idx] += 1
-        if score is not None:
-            hist[min(9, int(float(score) * 10))] += 1
-
-    return Timeline(
-        buckets=[
-            TimelineBucket(
-                start=t_min + timedelta(seconds=step * i),
-                total=bucket_total[i],
-                high_risk=bucket_risky[i],
-            )
-            for i in range(buckets)
-        ],
-        risk_histogram=[
-            RiskHistogramBin(lo=i / 10, hi=(i + 1) / 10, count=hist[i]) for i in range(10)
-        ],
-    )
-
-
 @app.get("/policy")
 def policy():
     """The deterministic decision policy + how the model scores — read-only."""
@@ -386,12 +336,12 @@ def policy():
 
 
 @app.get("/customers/{customer_id}", response_model=CustomerProfile)
-def get_customer(customer_id: str, limit: int = Query(40, ge=1, le=200), db: Session = Depends(get_db)):
+def get_customer(customer_id: str, db: Session = Depends(get_db)):
+    """Aggregate risk signals for a customer — not an itemised payment log."""
     rows = (
         db.query(PaymentEvent, RiskDecision)
         .outerjoin(RiskDecision, RiskDecision.event_id == PaymentEvent.id)
         .filter(PaymentEvent.customer_id == customer_id)
-        .order_by(PaymentEvent.id.desc())
         .all()
     )
     if not rows:
@@ -426,16 +376,4 @@ def get_customer(customer_id: str, limit: int = Query(40, ge=1, le=200), db: Ses
         recent_failed_streak=baseline["recent_failed_streak"],
         prior_event_count=baseline["prior_event_count"],
         decisions_by_action=by_action,
-        history=[
-            CustomerHistoryItem(
-                transaction_id=e.transaction_id,
-                amount=float(e.amount),
-                status=e.status,
-                event_time=e.event_time,
-                decision=d.decision if d else None,
-                risk_score=float(d.risk_score) if d and d.risk_score is not None else None,
-                decision_id=d.id if d else None,
-            )
-            for e, d in rows[:limit]
-        ],
     )

@@ -110,9 +110,10 @@ readiness probe), and `/stats/summary` now reports `high_risk`,
 `GET /decisions` take `limit` (1–500) + `offset`.
 
 Insight endpoints: `GET /policy` (the decision rules, thresholds, model feature
-importances, recovery base rates — everything the "Policy" page shows),
-`GET /customers/{id}` (a customer's history + behavioural baseline), and
-`GET /stats/timeline` (decisions bucketed over time + a risk-score histogram).
+importances, recovery base rates — everything the "Policy" page shows) and
+`GET /customers/{id}` (a customer's **aggregate** risk signals — success rate,
+decision mix, and the behavioural baseline the model compares against;
+deliberately not an itemised transaction log).
 
 ### Integration surface — using PaySentinel *before* a payment moves
 
@@ -171,13 +172,12 @@ reads as designed rather than generated). Three pages, all polling the API:
   LLM/template badge), the triggered signals, the feature snapshot the engine
   scored, and the full payment + decision record. `/investigation` alone lists
   what needs attention (HOLD / VERIFY). The customer id links to →
-- **Customer** (`/customers/:id`) — that customer's history, success rate, and
-  the behavioural baseline the model compares against.
+- **Customer** (`/customers/:id`) — that customer's **aggregate** risk profile:
+  success rate, decision mix, and the behavioural baseline the model compares
+  against. No itemised transaction history — a risk view, not a ledger.
 - **Policy** (`/policy`) — the decision rules as a numbered flow, the model's
   feature importances, and the recovery base rates. This is the "AI recommends,
   a deterministic policy decides" story, made concrete.
-
-Overview also has decisions-over-time and risk-score-distribution charts.
 
 Config: dev proxies `/api` → `localhost:8000` (see `vite.config.js`); for a
 Vercel deploy set `VITE_API_BASE_URL` to the backend origin (`frontend/.env.example`,

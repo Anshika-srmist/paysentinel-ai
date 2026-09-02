@@ -111,20 +111,6 @@
   .stream__head .hide-sm, .stream__row .stream__cat, .stream__row .stream__time, .stream__chev { display: none; }
 }
 
-/* ============ charts ============ */
-.chart-tip {
-  position: absolute; bottom: calc(100% + 8px); transform: translateX(-50%);
-  background: var(--ink); color: #fff; font-size: 11.5px; font-weight: 500;
-  padding: 6px 10px; border-radius: 8px; white-space: nowrap;
-  pointer-events: none; box-shadow: var(--shadow-md); z-index: 5;
-}
-.chart-tip b { font-weight: 700; }
-.chart-tip .muted { color: rgba(255, 255, 255, 0.62); font-size: 10.5px; margin-top: 1px; }
-
-.legend { display: flex; gap: 14px; margin-top: 12px; font-size: 11.5px; color: var(--ink-secondary); }
-.legend span { display: inline-flex; align-items: center; gap: 6px; }
-.legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
-
 /* ============ policy page ============ */
 .principle-quote {
   display: flex; gap: 12px; align-items: flex-start;
