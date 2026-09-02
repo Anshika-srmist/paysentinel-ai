@@ -10,6 +10,7 @@ import json
 import os
 import uuid
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from typing import List
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -19,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.database import Base, SessionLocal, engine, get_db, run_light_migrations
+from app.engine.feature_extractor import customer_baseline
 from app.engine.pipeline import process_event
 from app.integrations import razorpay as rz
 from app.models.risk_model import model_name
@@ -26,12 +28,17 @@ from app.models.orm_models import PaymentEvent, RiskDecision, _utcnow
 from app.models.schemas import (
     AssessRequest,
     AssessResponse,
+    CustomerHistoryItem,
+    CustomerProfile,
     DecisionDetail,
     DecisionListItem,
     PaymentEventIn,
     PaymentEventOut,
     RiskDecisionOut,
+    RiskHistogramBin,
     StatsSummary,
+    Timeline,
+    TimelineBucket,
 )
 from app.seed import seed_if_empty
 
@@ -309,4 +316,126 @@ def stats_summary(db: Session = Depends(get_db)):
         high_risk=high_risk,
         revenue_at_risk=float(revenue_at_risk),
         decisions_by_action=by_action,
+    )
+
+
+@app.get("/stats/timeline", response_model=Timeline)
+def stats_timeline(buckets: int = Query(24, ge=4, le=96), db: Session = Depends(get_db)):
+    """
+    Decisions over time (bucketed by the payment's event_time, which the
+    seeder backdates) plus a risk-score histogram — for the Overview charts.
+    """
+    rows = (
+        db.query(PaymentEvent.event_time, RiskDecision.decision, RiskDecision.risk_score)
+        .join(RiskDecision, RiskDecision.event_id == PaymentEvent.id)
+        .all()
+    )
+    if not rows:
+        return Timeline()
+
+    times = [r[0] for r in rows]
+    t_min, t_max = min(times), max(times)
+    span = (t_max - t_min).total_seconds() or 1.0
+    step = span / buckets
+
+    bucket_total = [0] * buckets
+    bucket_risky = [0] * buckets
+    hist = [0] * 10
+    for event_time, decision, score in rows:
+        idx = min(buckets - 1, int((event_time - t_min).total_seconds() / step))
+        bucket_total[idx] += 1
+        if decision in AT_RISK_DECISIONS:
+            bucket_risky[idx] += 1
+        if score is not None:
+            hist[min(9, int(float(score) * 10))] += 1
+
+    return Timeline(
+        buckets=[
+            TimelineBucket(
+                start=t_min + timedelta(seconds=step * i),
+                total=bucket_total[i],
+                high_risk=bucket_risky[i],
+            )
+            for i in range(buckets)
+        ],
+        risk_histogram=[
+            RiskHistogramBin(lo=i / 10, hi=(i + 1) / 10, count=hist[i]) for i in range(10)
+        ],
+    )
+
+
+@app.get("/policy")
+def policy():
+    """The deterministic decision policy + how the model scores — read-only."""
+    from app.engine.decision_engine import Decision, ACTION_TEXT, THRESHOLDS, policy_rules
+    from app.engine.recovery import base_rates
+    from app.models.risk_model import feature_importances
+
+    return {
+        "principle": (
+            "The ML model produces a probability, but the final action is chosen by "
+            "this deterministic policy — a probabilistic model never makes an "
+            "uncontrolled financial decision."
+        ),
+        "model": {"name": model_name(), "feature_importances": feature_importances()},
+        "thresholds": THRESHOLDS,
+        "rules": policy_rules(),
+        "actions": {d.value: ACTION_TEXT[d] for d in Decision},
+        "recovery_base_rates": base_rates(),
+    }
+
+
+@app.get("/customers/{customer_id}", response_model=CustomerProfile)
+def get_customer(customer_id: str, limit: int = Query(40, ge=1, le=200), db: Session = Depends(get_db)):
+    rows = (
+        db.query(PaymentEvent, RiskDecision)
+        .outerjoin(RiskDecision, RiskDecision.event_id == PaymentEvent.id)
+        .filter(PaymentEvent.customer_id == customer_id)
+        .order_by(PaymentEvent.id.desc())
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"no events for customer '{customer_id}'")
+
+    successful = sum(1 for e, _ in rows if e.status == "SUCCESS")
+    failed = sum(1 for e, _ in rows if e.status == "FAILED")
+    by_action: dict[str, int] = {}
+    flagged = 0
+    amount_at_risk = 0.0
+    for e, d in rows:
+        if d is not None:
+            by_action[d.decision] = by_action.get(d.decision, 0) + 1
+            if d.decision in AT_RISK_DECISIONS:
+                flagged += 1
+                amount_at_risk += float(e.amount)
+
+    baseline = customer_baseline(db, customer_id)
+
+    return CustomerProfile(
+        customer_id=customer_id,
+        total_events=len(rows),
+        successful=successful,
+        failed=failed,
+        success_rate=round(successful / len(rows), 4),
+        flagged_count=flagged,
+        amount_at_risk=round(amount_at_risk, 2),
+        history_good=baseline["history_good"],
+        typical_amount=baseline["typical_amount"],
+        usual_device=baseline["usual_device"],
+        usual_payment_method=baseline["usual_payment_method"],
+        recent_failed_streak=baseline["recent_failed_streak"],
+        prior_event_count=baseline["prior_event_count"],
+        decisions_by_action=by_action,
+        history=[
+            CustomerHistoryItem(
+                transaction_id=e.transaction_id,
+                amount=float(e.amount),
+                status=e.status,
+                event_time=e.event_time,
+                decision=d.decision if d else None,
+                risk_score=float(d.risk_score) if d and d.risk_score is not None else None,
+                decision_id=d.id if d else None,
+            )
+            for e, d in rows[:limit]
+        ],
     )

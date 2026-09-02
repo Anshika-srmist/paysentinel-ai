@@ -109,6 +109,11 @@ readiness probe), and `/stats/summary` now reports `high_risk`,
 `revenue_at_risk`, and a decision breakdown. `GET /payments` and
 `GET /decisions` take `limit` (1–500) + `offset`.
 
+Insight endpoints: `GET /policy` (the decision rules, thresholds, model feature
+importances, recovery base rates — everything the "Policy" page shows),
+`GET /customers/{id}` (a customer's history + behavioural baseline), and
+`GET /stats/timeline` (decisions bucketed over time + a risk-score histogram).
+
 ### Integration surface — using PaySentinel *before* a payment moves
 
 Everything above scores a payment that already happened. Two endpoints let a
@@ -159,11 +164,20 @@ reads as designed rather than generated). Three pages, all polling the API:
   and recent activity. Polls every 5s.
 - **Live Stream** (`/stream`) — the decision feed, newest first, new rows animate
   in; filter pills per action; each row → Investigation. Polls every 3s.
+- **Live Check** (`/check`) — a form that calls `POST /assess` and shows the
+  pre-payment verdict live (decision, safe flag, risk meter, explanation).
 - **Investigation** (`/investigation/:id`) — the pitch screen: the verdict and
   recommended action, risk-score meter, the **AI explanation** (with an
   LLM/template badge), the triggered signals, the feature snapshot the engine
   scored, and the full payment + decision record. `/investigation` alone lists
-  what needs attention (HOLD / VERIFY).
+  what needs attention (HOLD / VERIFY). The customer id links to →
+- **Customer** (`/customers/:id`) — that customer's history, success rate, and
+  the behavioural baseline the model compares against.
+- **Policy** (`/policy`) — the decision rules as a numbered flow, the model's
+  feature importances, and the recovery base rates. This is the "AI recommends,
+  a deterministic policy decides" story, made concrete.
+
+Overview also has decisions-over-time and risk-score-distribution charts.
 
 Config: dev proxies `/api` → `localhost:8000` (see `vite.config.js`); for a
 Vercel deploy set `VITE_API_BASE_URL` to the backend origin (`frontend/.env.example`,

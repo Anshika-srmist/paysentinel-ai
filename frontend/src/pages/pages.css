@@ -111,6 +111,44 @@
   .stream__head .hide-sm, .stream__row .stream__cat, .stream__row .stream__time, .stream__chev { display: none; }
 }
 
+/* ============ charts ============ */
+.chart-tip {
+  position: absolute; bottom: calc(100% + 8px); transform: translateX(-50%);
+  background: var(--ink); color: #fff; font-size: 11.5px; font-weight: 500;
+  padding: 6px 10px; border-radius: 8px; white-space: nowrap;
+  pointer-events: none; box-shadow: var(--shadow-md); z-index: 5;
+}
+.chart-tip b { font-weight: 700; }
+.chart-tip .muted { color: rgba(255, 255, 255, 0.62); font-size: 10.5px; margin-top: 1px; }
+
+.legend { display: flex; gap: 14px; margin-top: 12px; font-size: 11.5px; color: var(--ink-secondary); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+/* ============ policy page ============ */
+.principle-quote {
+  display: flex; gap: 12px; align-items: flex-start;
+  margin: 0; padding: 16px 20px;
+  border-radius: var(--r-lg);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  background: linear-gradient(180deg, var(--accent-wash), color-mix(in srgb, var(--accent-wash) 45%, var(--surface)));
+  font-size: 14.5px; font-weight: 500; line-height: 1.55; color: var(--ink);
+}
+.principle-quote svg { color: var(--accent); flex: none; margin-top: 3px; }
+
+.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.rule { display: flex; gap: 14px; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-sunken); border: 1px solid var(--border); }
+.rule__n {
+  flex: none; display: grid; place-items: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  font-size: 12px; font-weight: 700; color: var(--ink-secondary);
+}
+.rule__body { display: grid; gap: 6px; min-width: 0; }
+.rule__cond { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.rule__cond code { font-family: var(--font-mono); font-size: 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; }
+.rule__why { font-size: 12.5px; color: var(--ink-secondary); }
+
 /* ============ live check form ============ */
 .checkform { display: grid; gap: 14px; align-self: start; }
 .checkform__presets { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 4px; }

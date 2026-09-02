@@ -38,4 +38,7 @@ export const api = {
     return request(`/payments?${q}`, opts)
   },
   assess: (body, opts = {}) => request('/assess', { ...opts, method: 'POST', body }),
+  policy: (opts) => request('/policy', opts),
+  customer: (id, opts) => request(`/customers/${encodeURIComponent(id)}`, opts),
+  timeline: ({ buckets = 24, ...opts } = {}) => request(`/stats/timeline?buckets=${buckets}`, opts),
 }

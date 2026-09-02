@@ -23,6 +23,11 @@ _BASE_RATE = {
 }
 
 
+def base_rates() -> dict:
+    """The per-category base recoverability rates, for the /policy page."""
+    return {category.value: rate for category, rate in _BASE_RATE.items()}
+
+
 def recovery_probability(
     failure_category: FailureCategory,
     risk_score: float,

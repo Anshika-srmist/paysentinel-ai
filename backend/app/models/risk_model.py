@@ -43,3 +43,15 @@ def score_transaction(amount: float, amount_ratio_to_typical: float, is_new_devi
 
 def model_name() -> str:
     return _load()["model_name"]
+
+
+def feature_importances() -> dict | None:
+    """Per-feature importance for tree models (RandomForest); None for LogReg."""
+    bundle = _load()
+    model = bundle["model"]
+    if not hasattr(model, "feature_importances_"):
+        return None
+    return {
+        name: round(float(weight), 4)
+        for name, weight in zip(bundle["features"], model.feature_importances_)
+    }

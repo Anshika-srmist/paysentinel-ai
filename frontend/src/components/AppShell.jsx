@@ -9,6 +9,7 @@ const NAV = [
   { to: '/stream', label: 'Live stream', icon: 'activity' },
   { to: '/check', label: 'Live check', icon: 'bolt' },
   { to: '/investigation', label: 'Investigation', icon: 'search' },
+  { to: '/policy', label: 'Policy', icon: 'layers' },
 ]
 
 function ApiStatus() {

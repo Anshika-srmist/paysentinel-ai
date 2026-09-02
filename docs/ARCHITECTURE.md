@@ -184,6 +184,9 @@ records `explanation_source` so the dashboard can show which path produced it.
 | `/health` | GET | Readiness probe — DB reachable + risk model loaded (503 if not) |
 | `/assess` | POST | **Pre-payment check** — score an attempt that hasn't happened yet, return `{decision, safe, risk_score, explanation, signals}` synchronously. Stored as `PENDING`. Optional `X-API-Key`. |
 | `/webhooks/razorpay` | POST | Ingest a Razorpay webhook (`payment.captured` / `payment.failed` / …); maps + scores it. Verifies `X-Razorpay-Signature` when a secret is set; idempotent on retry. |
+| `/policy` | GET | The decision rules, thresholds, model feature importances, recovery base rates — powers the Policy page. |
+| `/customers/{id}` | GET | A customer's payment history + the behavioural baseline the model compares against. |
+| `/stats/timeline` | GET | Decisions bucketed by event time + a 10-bin risk-score histogram, for the Overview charts. |
 
 ### 7b. Integration surface
 

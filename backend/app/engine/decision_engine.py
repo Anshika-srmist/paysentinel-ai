@@ -60,3 +60,32 @@ def decide(risk_score: float, failure_category: str, customer_history_good: bool
 
 def action_text(decision: Decision) -> str:
     return ACTION_TEXT[decision]
+
+
+# Thresholds and the rule list, exposed as data for the /policy page so the
+# dashboard shows exactly what `decide()` above does.
+THRESHOLDS = {
+    "hold_above": HOLD_THRESHOLD,
+    "verify_band": [LOW_RISK_THRESHOLD, HOLD_THRESHOLD],
+    "retry_below": LOW_RISK_THRESHOLD,
+}
+
+
+def policy_rules() -> list[dict]:
+    return [
+        {"order": 1, "condition": f"risk_score > {HOLD_THRESHOLD}",
+         "outcome": Decision.HOLD.value,
+         "rationale": "Very high risk — never auto-process."},
+        {"order": 2, "condition": f"failure is temporary AND risk_score < {LOW_RISK_THRESHOLD}",
+         "outcome": Decision.RETRY.value,
+         "rationale": "Transient failure at low risk — safe to retry automatically."},
+        {"order": 3, "condition": "failure is payment_method AND customer history is good",
+         "outcome": Decision.OFFER_ALTERNATIVE.value,
+         "rationale": "Trusted customer, method-level failure — suggest another method."},
+        {"order": 4, "condition": f"{LOW_RISK_THRESHOLD} ≤ risk_score ≤ {HOLD_THRESHOLD}",
+         "outcome": Decision.VERIFY.value,
+         "rationale": "Elevated risk — step-up verification before proceeding."},
+        {"order": 5, "condition": "otherwise",
+         "outcome": Decision.APPROVE.value,
+         "rationale": "Low risk, no blocking condition — allow it."},
+    ]

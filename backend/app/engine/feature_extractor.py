@@ -152,6 +152,36 @@ def extract_features(db: Session, event: PaymentEvent) -> Features:
     return features
 
 
+def customer_baseline(db: Session, customer_id: str) -> dict:
+    """
+    The behavioural baseline the model uses for a customer — computed from
+    all their events, for the customer drill-down page. Independent of any
+    single payment.
+    """
+    events = list(
+        db.execute(
+            select(PaymentEvent)
+            .where(PaymentEvent.customer_id == customer_id)
+            .order_by(PaymentEvent.id.desc())
+        ).scalars().all()
+    )
+    window = events[:_HISTORY_WINDOW]
+    devices = [e.device_id for e in window if e.device_id]
+    methods = [e.payment_method for e in window if e.payment_method]
+
+    def _mode(values: List[str]) -> str | None:
+        return max(set(values), key=values.count) if values else None
+
+    return {
+        "typical_amount": round(_typical_amount(window), 2) if _typical_amount(window) else None,
+        "usual_device": _mode(devices),
+        "usual_payment_method": _mode(methods),
+        "recent_failed_streak": _recent_failed_streak(window),
+        "history_good": _history_is_good(window),
+        "prior_event_count": len(events),
+    }
+
+
 def _build_signals(f: Features) -> List[str]:
     """Human-readable reasons, in roughly descending importance."""
     signals: List[str] = []

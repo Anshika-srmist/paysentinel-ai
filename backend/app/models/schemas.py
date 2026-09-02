@@ -73,6 +73,51 @@ class StatsSummary(BaseModel):
     decisions_by_action: Dict[str, int] = {}
 
 
+class CustomerHistoryItem(BaseModel):
+    transaction_id: str
+    amount: float
+    status: str
+    event_time: datetime
+    decision: Optional[str] = None
+    risk_score: Optional[float] = None
+    decision_id: Optional[int] = None
+
+
+class CustomerProfile(BaseModel):
+    customer_id: str
+    total_events: int
+    successful: int
+    failed: int
+    success_rate: float
+    flagged_count: int                       # decisions routed to VERIFY / HOLD
+    amount_at_risk: float
+    history_good: bool
+    typical_amount: Optional[float] = None
+    usual_device: Optional[str] = None
+    usual_payment_method: Optional[str] = None
+    recent_failed_streak: int = 0
+    prior_event_count: int = 0
+    decisions_by_action: Dict[str, int] = {}
+    history: List[CustomerHistoryItem] = []
+
+
+class TimelineBucket(BaseModel):
+    start: datetime
+    total: int
+    high_risk: int
+
+
+class RiskHistogramBin(BaseModel):
+    lo: float
+    hi: float
+    count: int
+
+
+class Timeline(BaseModel):
+    buckets: List[TimelineBucket] = []
+    risk_histogram: List[RiskHistogramBin] = []
+
+
 class AssessRequest(BaseModel):
     """A payment *about to happen* — the caller wants a verdict before it moves.
 

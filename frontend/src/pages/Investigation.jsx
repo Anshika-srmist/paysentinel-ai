@@ -191,7 +191,12 @@ export function Investigation() {
             <div className="card-head"><h2>Payment details</h2></div>
             <div className="card-pad" style={{ paddingTop: 4, paddingBottom: 4 }}>
               <div className="kv">
-                <KV k="Customer" v={ev.customer_id} mono />
+                <div className="kv__item">
+                  <span className="kv__k">Customer</span>
+                  <Link to={`/customers/${encodeURIComponent(ev.customer_id)}`} className="kv__v mono card-link">
+                    {ev.customer_id} <Icon name="chevron" size={12} />
+                  </Link>
+                </div>
                 <KV k="Merchant" v={ev.merchant_id} mono />
                 <KV k="Method" v={ev.payment_method} />
                 <KV k="Bank" v={ev.bank} />
