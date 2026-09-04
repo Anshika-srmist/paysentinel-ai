@@ -35,6 +35,14 @@ _ADDED_COLUMNS = {
         "model_name": "VARCHAR(50)",
         "features_json": "TEXT",
         "signals_json": "TEXT",
+        "ml_risk": "NUMERIC(5, 4)",
+        "behavioral_risk": "NUMERIC(5, 4)",
+        "network_risk": "NUMERIC(5, 4)",
+        "rule_severity": "VARCHAR(10)",
+        "behavioral_json": "TEXT",
+        "network_json": "TEXT",
+        "audit_json": "TEXT",
+        "explanation_json": "TEXT",
     },
 }
 

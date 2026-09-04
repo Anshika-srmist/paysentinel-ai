@@ -24,10 +24,14 @@ class PaymentEventOut(PaymentEventIn):
 
 
 class RiskDecisionOut(BaseModel):
-    """The risk engine's output for one event (Day 3)."""
+    """The risk engine's output for one event."""
     id: int
     event_id: int
-    risk_score: float
+    risk_score: float                        # the composite risk score
+    ml_risk: Optional[float] = None
+    behavioral_risk: Optional[float] = None
+    network_risk: Optional[float] = None
+    rule_severity: Optional[str] = None
     failure_category: Optional[str] = None
     decision: str
     recovery_probability: Optional[float] = None
@@ -46,13 +50,19 @@ class DecisionListItem(BaseModel):
     event_id: int
     transaction_id: str
     customer_id: str
+    merchant_id: Optional[str] = None
+    payment_method: Optional[str] = None
+    device_id: Optional[str] = None
     amount: float
     status: str
-    risk_score: float
+    risk_score: float                        # composite
+    ml_risk: Optional[float] = None
+    network_risk: Optional[float] = None
     failure_category: Optional[str] = None
     decision: str
     recovery_probability: Optional[float] = None
     created_at: datetime
+    event_time: datetime
 
 
 class DecisionDetail(BaseModel):
@@ -62,6 +72,11 @@ class DecisionDetail(BaseModel):
     recommended_action: Optional[str] = None
     signals: List[str] = []
     features: Dict[str, Any] = {}
+    behavioral: Dict[str, Any] = {}          # {behavioral_risk, signals[], weights}
+    network: Dict[str, Any] = {}             # {network_risk, signals[], conclusion, ...}
+    explanation_sections: Dict[str, Any] = {}
+    audit: List[Dict[str, Any]] = []
+    risk_breakdown: Dict[str, Any] = {}      # ml / behavioral / network / rule_severity / composite
 
 
 class StatsSummary(BaseModel):
@@ -116,9 +131,15 @@ class AssessResponse(BaseModel):
     transaction_id: str
     decision: str                            # APPROVE | RETRY | OFFER_ALTERNATIVE | VERIFY | HOLD
     safe: bool                               # APPROVE only — a convenience flag for callers
-    risk_score: float
+    composite_risk: float
+    ml_risk: Optional[float] = None
+    behavioral_risk: Optional[float] = None
+    network_risk: Optional[float] = None
+    rule_severity: Optional[str] = None
     recommended_action: Optional[str] = None
     explanation: Optional[str] = None
+    explanation_sections: Dict[str, Any] = {}
     signals: List[str] = []
+    network_conclusion: Optional[str] = None
     model_name: Optional[str] = None
     decision_id: int

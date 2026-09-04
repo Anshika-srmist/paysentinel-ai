@@ -24,7 +24,7 @@ def _utcnow() -> datetime:
 from sqlalchemy.orm import Session
 
 from app.engine.pipeline import process_event
-from app.models.orm_models import PaymentEvent
+from app.models.orm_models import PaymentEvent, RiskDecision
 
 _BANKS = ["HDFC", "ICICI", "SBI", "Axis", "Kotak", "Yes Bank"]
 _METHODS = ["UPI", "CARD", "NETBANKING", "WALLET"]
@@ -32,18 +32,48 @@ _DEVICES = [f"DEVICE_{i}" for i in range(1, 30)]
 _MERCHANTS = [f"MER_{i}" for i in range(1, 13)]
 
 # A small, fixed customer pool so history accumulates fast enough for
-# "established customer" behaviour (needed to exercise OFFER_ALTERNATIVE).
+# "established customer" behaviour. Each customer has their OWN device so
+# normal traffic carries no spurious network links — the only shared-device
+# cluster is the coordinated ring injected below.
 _CUSTOMERS = {
     f"CUST_{i}": {
         "low": rng_low,
         "high": rng_high,
         "method": _METHODS[i % len(_METHODS)],
-        "device": _DEVICES[i % len(_DEVICES)],
+        "device": f"DEVICE_{i}",
     }
     for i, (rng_low, rng_high) in enumerate(
         [(200, 1800), (500, 2500), (800, 3200), (300, 1500), (1000, 4000)] * 4, start=1
     )
 }
+
+# --- coordinated ring: the hero network scenario ---------------------
+# 4 accounts on one shared device firing similar-amount payments in a
+# tight window, mostly to one merchant. Deterministic.
+_RING_CUSTOMERS = ["CUST_R1", "CUST_R2", "CUST_R3", "CUST_R4"]
+_RING_DEVICE = "DEVICE_RING"
+_RING_MERCHANT = "MER_RING"
+_RING_AMOUNT = 9000.0
+
+
+def _ring_events(rng: random.Random) -> list[dict]:
+    out = []
+    for k in range(13):
+        cust = _RING_CUSTOMERS[k % len(_RING_CUSTOMERS)]
+        out.append({
+            "transaction_id": f"TXN_RING{k:02d}",
+            "customer_id": cust,
+            "merchant_id": _RING_MERCHANT if k % 5 != 4 else rng.choice(_MERCHANTS),
+            "payment_method": "CARD",
+            "bank": "HDFC",
+            # a tight ~6-minute burst, a few minutes back
+            "event_time": _utcnow() - timedelta(minutes=9) + timedelta(seconds=k * 28),
+            "device_id": _RING_DEVICE,
+            "status": "SUCCESS" if k % 6 else "FAILED",
+            "failure_reason": None if k % 6 else "MULTIPLE_FAILED_ATTEMPTS",
+            "amount": round(_RING_AMOUNT * rng.uniform(0.975, 1.025), 2),
+        })
+    return out
 
 _SCENARIOS = ["success", "temporary_failure", "fraud", "repeated_failure", "suspicious"]
 _WEIGHTS = [0.60, 0.15, 0.06, 0.12, 0.07]
@@ -97,17 +127,38 @@ def seed_if_empty(db: Session, count: int | None = None) -> int:
     count = count or int(os.getenv("PAYSENTINEL_SEED_COUNT", "140"))
     rng = random.Random(42)
     made = 0
-    # Oldest first, so "time ago" in the UI shows a spread over ~3 hours.
-    for i in range(count):
-        minutes_ago = int((count - i) * (180 / max(count, 1)))
-        row = PaymentEvent(**_build_event(rng, minutes_ago))
+
+    # background traffic first (oldest -> newest so "time ago" spreads out)
+    batch = [_build_event(rng, int((count - i) * (180 / max(count, 1)))) for i in range(count)]
+    # then the coordinated ring, injected near the recent end
+    batch += _ring_events(rng)
+    batch.sort(key=lambda e: e["event_time"])
+
+    ring_rows: list[PaymentEvent] = []
+    for ev in batch:
+        row = PaymentEvent(**ev)
         db.add(row)
         db.commit()
         db.refresh(row)
+        if row.transaction_id.startswith("TXN_RING"):
+            ring_rows.append(row)
         try:
             process_event(db, row)
             made += 1
         except Exception as exc:  # noqa: BLE001
             print(f"[seed] scoring failed for {row.transaction_id}: {exc}")
-    print(f"[seed] inserted {made} scored events into an empty database")
+
+    # Re-score the ring now that the whole cluster is visible — the earlier
+    # events were scored while the pattern was still forming. (A real system
+    # re-evaluates risk as connected activity accumulates.)
+    for row in ring_rows:
+        db.query(RiskDecision).filter(RiskDecision.event_id == row.id).delete()
+        db.commit()
+        db.refresh(row)
+        try:
+            process_event(db, row)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[seed] re-score failed for {row.transaction_id}: {exc}")
+
+    print(f"[seed] inserted {made} scored events (incl. the re-scored coordinated ring)")
     return made

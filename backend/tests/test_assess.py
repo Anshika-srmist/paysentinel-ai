@@ -30,8 +30,10 @@ def test_assess_returns_a_synchronous_verdict():
     body = r.json()
     assert body["decision"] in VALID
     assert body["safe"] is (body["decision"] == "APPROVE")
-    assert 0.0 <= body["risk_score"] <= 1.0
+    assert 0.0 <= body["composite_risk"] <= 1.0
+    assert 0.0 <= body["ml_risk"] <= 1.0
     assert body["explanation"]
+    assert body["explanation_sections"]["why_this_action"]
     assert body["recommended_action"]
     assert body["transaction_id"].startswith("ASSESS_")
 
@@ -59,11 +61,14 @@ def test_reusing_a_transaction_id_is_rejected():
 
 def test_anomalous_attempt_scores_higher_than_a_normal_one():
     cust = f"CUST_ASSESS_{uuid.uuid4().hex[:6]}"
+    dev = f"DEV_{uuid.uuid4().hex[:6]}"
     for i in range(6):
-        _assess(customer_id=cust, amount=1000.0 + i, device_id="DEVICE_1")
-    normal = _assess(customer_id=cust, amount=1050.0, device_id="DEVICE_1").json()
-    weird = _assess(customer_id=cust, amount=70000.0, device_id="DEVICE_99", payment_method="CARD").json()
-    assert weird["risk_score"] > normal["risk_score"]
+        _assess(customer_id=cust, amount=1000.0 + i, device_id=dev)
+    normal = _assess(customer_id=cust, amount=1050.0, device_id=dev).json()
+    weird = _assess(customer_id=cust, amount=70000.0,
+                    device_id=f"NEW_{uuid.uuid4().hex[:6]}", payment_method="CARD").json()
+    assert weird["ml_risk"] > normal["ml_risk"]
+    assert weird["composite_risk"] >= normal["composite_risk"]
 
 
 def test_api_key_gate(monkeypatch):

@@ -49,6 +49,8 @@ class Features:
     recent_failed_count: int
     customer_history_good: bool
     prior_event_count: int
+    typical_amount: float | None = None
+    is_new_merchant: bool = False
     signals: List[str] = field(default_factory=list)
 
     def as_model_input(self) -> dict:
@@ -129,9 +131,11 @@ def extract_features(db: Session, event: PaymentEvent) -> Features:
 
     prior_devices = {e.device_id for e in prior if e.device_id}
     prior_methods = {e.payment_method for e in prior if e.payment_method}
+    prior_merchants = {e.merchant_id for e in prior if e.merchant_id}
 
     is_new_device = bool(prior) and event.device_id is not None and event.device_id not in prior_devices
     is_new_method = bool(prior) and event.payment_method is not None and event.payment_method not in prior_methods
+    is_new_merchant = bool(prior) and event.merchant_id is not None and event.merchant_id not in prior_merchants
 
     hour = event.event_time.hour
     is_unusual_hour = not (6 <= hour <= 23)
@@ -147,6 +151,8 @@ def extract_features(db: Session, event: PaymentEvent) -> Features:
         recent_failed_count=recent_failed_count,
         customer_history_good=_history_is_good(prior),
         prior_event_count=len(prior),
+        typical_amount=round(typical, 2) if typical else None,
+        is_new_merchant=is_new_merchant,
     )
     features.signals = _build_signals(features)
     return features

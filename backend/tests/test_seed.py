@@ -27,10 +27,11 @@ def db():
 def test_seed_populates_an_empty_database(db, monkeypatch):
     monkeypatch.setenv("PAYSENTINEL_SEED_ON_START", "1")
     made = seed_if_empty(db, count=30)
-    assert made == 30
-    assert db.query(PaymentEvent).count() == 30
-    # every seeded event was scored
-    assert db.query(RiskDecision).count() == 30
+    ring_n = db.query(PaymentEvent).filter(PaymentEvent.device_id == "DEVICE_RING").count()
+    assert ring_n >= 11                          # the coordinated ring landed
+    assert made == 30 + ring_n                   # background + ring
+    assert db.query(PaymentEvent).count() == made
+    assert db.query(RiskDecision).count() == made
 
 
 def test_seed_is_a_noop_when_data_exists(db, monkeypatch):

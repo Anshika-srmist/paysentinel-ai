@@ -47,10 +47,21 @@ class RiskDecision(Base):
     # Day 3 additions — recorded so the Investigation page can show exactly
     # what the engine saw. All nullable / additive; run_light_migrations()
     # backfills them onto a database created on Day 1/2.
-    explanation_source = Column(String(20), nullable=True)  # llm | template
+    explanation_source = Column(String(20), nullable=True)  # llm | structured
     recommended_action = Column(String(120), nullable=True)
     model_name = Column(String(50), nullable=True)          # which risk model scored this
     features_json = Column(Text, nullable=True)             # the engineered feature snapshot
     signals_json = Column(Text, nullable=True)              # human-readable triggered signals
+
+    # Composite-risk fusion. `risk_score` above now holds the composite; the
+    # component scores are kept so the Investigation page can show the breakdown.
+    ml_risk = Column(Numeric(5, 4), nullable=True)
+    behavioral_risk = Column(Numeric(5, 4), nullable=True)
+    network_risk = Column(Numeric(5, 4), nullable=True)
+    rule_severity = Column(String(10), nullable=True)       # LOW | MEDIUM | HIGH | CRITICAL
+    behavioral_json = Column(Text, nullable=True)           # scored behavioural signals
+    network_json = Column(Text, nullable=True)              # network conclusion + signals
+    audit_json = Column(Text, nullable=True)                # decision timeline
+    explanation_json = Column(Text, nullable=True)          # structured explanation sections
 
     created_at = Column(DateTime, default=_utcnow)

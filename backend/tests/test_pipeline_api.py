@@ -25,7 +25,9 @@ def customer_id():
 
 
 def _post(customer_id, *, amount, status="SUCCESS", failure_reason=None,
-          device_id="DEVICE_1", method="UPI", minutes_ago=0):
+          device_id=None, method="UPI", minutes_ago=0):
+    # default: a device private to this customer, so normal traffic carries
+    # no spurious network links
     event = {
         "transaction_id": f"TXN_{uuid.uuid4().hex[:10].upper()}",
         "customer_id": customer_id,
@@ -33,7 +35,7 @@ def _post(customer_id, *, amount, status="SUCCESS", failure_reason=None,
         "amount": amount,
         "payment_method": method,
         "bank": "HDFC",
-        "device_id": device_id,
+        "device_id": device_id or f"DEV_{customer_id}",
         "status": status,
         "failure_reason": failure_reason,
         "event_time": (datetime(2026, 9, 1, 12, 0, 0) + timedelta(minutes=minutes_ago)).isoformat(),
@@ -64,10 +66,13 @@ def test_decision_detail_has_an_explanation_and_signals(customer_id):
     detail = client.get(f"/decisions/{decision_id}").json()
     assert detail["event"]["transaction_id"] == txn
     assert detail["decision"]["explanation"]                     # non-empty
-    assert detail["decision"]["explanation_source"] == "template"  # LLM off by default
+    assert detail["decision"]["explanation_source"] == "structured"  # LLM off by default
     assert detail["decision"]["model_name"]
     assert detail["recommended_action"]
     assert isinstance(detail["features"], dict) and detail["features"]
+    assert detail["explanation_sections"]["why_this_action"]
+    assert isinstance(detail["audit"], list) and len(detail["audit"]) >= 5
+    assert detail["risk_breakdown"]["composite"] is not None
 
 
 def test_unknown_decision_id_returns_404():
@@ -85,14 +90,15 @@ def test_anomalous_payment_scores_higher_than_a_normal_one(customer_id):
     for i in range(6):
         _post(customer_id, amount=1000.0, minutes_ago=i)
 
-    normal_txn = _post(customer_id, amount=1050.0, device_id="DEVICE_1", minutes_ago=10)
+    normal_txn = _post(customer_id, amount=1050.0, minutes_ago=10)
     anomalous_txn = _post(
-        customer_id, amount=60000.0, device_id="DEVICE_99", method="CARD", minutes_ago=11
+        customer_id, amount=60000.0, device_id=f"NEW_{uuid.uuid4().hex[:6]}", method="CARD", minutes_ago=11
     )
 
     normal = _decision_for(normal_txn)
     anomalous = _decision_for(anomalous_txn)
-    assert anomalous["risk_score"] > normal["risk_score"]
+    assert anomalous["ml_risk"] > normal["ml_risk"]
+    assert anomalous["risk_score"] >= normal["risk_score"]
 
 
 def test_stats_summary_reports_decision_breakdown(customer_id):

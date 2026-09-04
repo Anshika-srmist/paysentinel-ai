@@ -62,6 +62,19 @@ def action_text(decision: Decision) -> str:
     return ACTION_TEXT[decision]
 
 
+def evaluate(risk_score: float, failure_category: str, customer_history_good: bool) -> tuple[Decision, str]:
+    """Like `decide()`, but also returns the exact rule condition that fired."""
+    if risk_score > HOLD_THRESHOLD:
+        return Decision.HOLD, f"composite_risk > {HOLD_THRESHOLD}"
+    if failure_category == "temporary" and risk_score < LOW_RISK_THRESHOLD:
+        return Decision.RETRY, f"temporary failure AND composite_risk < {LOW_RISK_THRESHOLD}"
+    if failure_category == "payment_method" and customer_history_good:
+        return Decision.OFFER_ALTERNATIVE, "payment_method failure AND customer history good"
+    if LOW_RISK_THRESHOLD <= risk_score <= HOLD_THRESHOLD:
+        return Decision.VERIFY, f"{LOW_RISK_THRESHOLD} ≤ composite_risk ≤ {HOLD_THRESHOLD}"
+    return Decision.APPROVE, "no blocking condition"
+
+
 # Thresholds and the rule list, exposed as data for the /policy page so the
 # dashboard shows exactly what `decide()` above does.
 THRESHOLDS = {

@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.database import Base, SessionLocal, engine, get_db, run_light_migrations
+from app.engine import network
 from app.engine.feature_extractor import customer_baseline
 from app.engine.pipeline import process_event
 from app.integrations import razorpay as rz
@@ -152,17 +153,24 @@ def assess(req: AssessRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail=f"transaction_id '{txn}' was already assessed")
     db.refresh(event)
 
-    decision = process_event(db, event)
+    d = process_event(db, event)
+    net = json.loads(d.network_json) if d.network_json else {}
     return AssessResponse(
         transaction_id=txn,
-        decision=decision.decision,
-        safe=decision.decision == "APPROVE",
-        risk_score=float(decision.risk_score),
-        recommended_action=decision.recommended_action,
-        explanation=decision.explanation,
-        signals=json.loads(decision.signals_json) if decision.signals_json else [],
-        model_name=decision.model_name,
-        decision_id=decision.id,
+        decision=d.decision,
+        safe=d.decision == "APPROVE",
+        composite_risk=float(d.risk_score),
+        ml_risk=float(d.ml_risk) if d.ml_risk is not None else None,
+        behavioral_risk=float(d.behavioral_risk) if d.behavioral_risk is not None else None,
+        network_risk=float(d.network_risk) if d.network_risk is not None else None,
+        rule_severity=d.rule_severity,
+        recommended_action=d.recommended_action,
+        explanation=d.explanation,
+        explanation_sections=json.loads(d.explanation_json) if d.explanation_json else {},
+        signals=json.loads(d.signals_json) if d.signals_json else [],
+        network_conclusion=net.get("conclusion"),
+        model_name=d.model_name,
+        decision_id=d.id,
     )
 
 
@@ -288,32 +296,70 @@ def list_decisions(
             event_id=e.id,
             transaction_id=e.transaction_id,
             customer_id=e.customer_id,
+            merchant_id=e.merchant_id,
+            payment_method=e.payment_method,
+            device_id=e.device_id,
             amount=float(e.amount),
             status=e.status,
             risk_score=float(d.risk_score),
+            ml_risk=float(d.ml_risk) if d.ml_risk is not None else None,
+            network_risk=float(d.network_risk) if d.network_risk is not None else None,
             failure_category=d.failure_category,
             decision=d.decision,
             recovery_probability=float(d.recovery_probability) if d.recovery_probability is not None else None,
             created_at=d.created_at,
+            event_time=e.event_time,
         )
         for d, e in rows
     ]
 
 
+def _loads(s):
+    return json.loads(s) if s else None
+
+
 @app.get("/decisions/{decision_id}", response_model=DecisionDetail)
 def get_decision(decision_id: int, db: Session = Depends(get_db)):
-    decision = db.get(RiskDecision, decision_id)
-    if decision is None:
+    d = db.get(RiskDecision, decision_id)
+    if d is None:
         raise HTTPException(status_code=404, detail="decision not found")
-    event = db.get(PaymentEvent, decision.event_id)
+    event = db.get(PaymentEvent, d.event_id)
 
     return DecisionDetail(
         event=PaymentEventOut.model_validate(event),
-        decision=RiskDecisionOut.model_validate(decision),
-        recommended_action=decision.recommended_action,
-        signals=json.loads(decision.signals_json) if decision.signals_json else [],
-        features=json.loads(decision.features_json) if decision.features_json else {},
+        decision=RiskDecisionOut.model_validate(d),
+        recommended_action=d.recommended_action,
+        signals=_loads(d.signals_json) or [],
+        features=_loads(d.features_json) or {},
+        behavioral=_loads(d.behavioral_json) or {},
+        network=_loads(d.network_json) or {},
+        explanation_sections=_loads(d.explanation_json) or {},
+        audit=_loads(d.audit_json) or [],
+        risk_breakdown={
+            "composite": float(d.risk_score) if d.risk_score is not None else None,
+            "ml": float(d.ml_risk) if d.ml_risk is not None else None,
+            "behavioral": float(d.behavioral_risk) if d.behavioral_risk is not None else None,
+            "network": float(d.network_risk) if d.network_risk is not None else None,
+            "rule_severity": d.rule_severity,
+        },
     )
+
+
+@app.get("/audit/{transaction_id}")
+def get_audit(transaction_id: str, db: Session = Depends(get_db)):
+    event = db.query(PaymentEvent).filter(PaymentEvent.transaction_id == transaction_id).first()
+    if event is None:
+        raise HTTPException(status_code=404, detail="transaction not found")
+    d = db.query(RiskDecision).filter(RiskDecision.event_id == event.id).order_by(RiskDecision.id.desc()).first()
+    return {"transaction_id": transaction_id, "trail": (_loads(d.audit_json) if d else None) or []}
+
+
+@app.get("/transactions/{transaction_id}/network")
+def transaction_network(transaction_id: str, db: Session = Depends(get_db)):
+    event = db.query(PaymentEvent).filter(PaymentEvent.transaction_id == transaction_id).first()
+    if event is None:
+        raise HTTPException(status_code=404, detail="transaction not found")
+    return network.analyze_transaction(db, event)
 
 
 @app.get("/stats/summary", response_model=StatsSummary)
@@ -364,23 +410,148 @@ def stats_summary(db: Session = Depends(get_db)):
 
 @app.get("/policy")
 def policy():
-    """The deterministic decision policy + how the model scores — read-only."""
+    """The deterministic decision policy + how risk is fused — read-only."""
     from app.engine.decision_engine import Decision, ACTION_TEXT, THRESHOLDS, policy_rules
+    from app.engine.fusion import BLEND, SEVERITY_FLOOR
     from app.engine.recovery import base_rates
     from app.models.risk_model import feature_importances
 
     return {
         "principle": (
-            "The ML model produces a probability, but the final action is chosen by "
-            "this deterministic policy — a probabilistic model never makes an "
+            "The model recommends a risk score. The deterministic policy engine "
+            "decides the permitted action — a probabilistic model never makes an "
             "uncontrolled financial decision."
         ),
         "model": {"name": model_name(), "feature_importances": feature_importances()},
+        "fusion": {
+            "formula": "composite = 0.45·ML + 0.20·behavioural + 0.35·network, then raised to a rule-severity floor",
+            "blend": BLEND,
+            "severity_floor": SEVERITY_FLOOR,
+        },
         "thresholds": THRESHOLDS,
         "rules": policy_rules(),
         "actions": {d.value: ACTION_TEXT[d] for d in Decision},
         "recovery_base_rates": base_rates(),
     }
+
+
+# --- model metrics + analytics -----------------------------------------
+
+_METRICS_PATH = os.path.join(os.path.dirname(__file__), "..", "ml", "metrics.json")
+
+
+@app.get("/model/metrics")
+def model_metrics():
+    """Held-out evaluation report (read straight from ml/metrics.json)."""
+    try:
+        with open(_METRICS_PATH) as fh:
+            return json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError):
+        raise HTTPException(status_code=503, detail="metrics.json not found — run `python ml/train.py`")
+
+
+@app.get("/analytics")
+def analytics(db: Session = Depends(get_db)):
+    """Risk distribution, decision mix, top signals, failure categories."""
+    rows = (
+        db.query(RiskDecision, PaymentEvent)
+        .join(PaymentEvent, RiskDecision.event_id == PaymentEvent.id)
+        .all()
+    )
+    hist = [0] * 10
+    by_action: dict[str, int] = {}
+    by_failure: dict[str, int] = {}
+    signal_counts: dict[str, int] = {}
+    for d, e in rows:
+        if d.risk_score is not None:
+            hist[min(9, int(float(d.risk_score) * 10))] += 1
+        by_action[d.decision] = by_action.get(d.decision, 0) + 1
+        if d.failure_category and d.failure_category != "none":
+            by_failure[d.failure_category] = by_failure.get(d.failure_category, 0) + 1
+        for j in (json.loads(d.behavioral_json) if d.behavioral_json else {}).get("signals", []):
+            signal_counts[j["signal"]] = signal_counts.get(j["signal"], 0) + 1
+        for j in (json.loads(d.network_json) if d.network_json else {}).get("signals", []):
+            signal_counts[j["signal"]] = signal_counts.get(j["signal"], 0) + 1
+
+    return {
+        "total_decisions": len(rows),
+        "risk_histogram": [{"lo": i / 10, "hi": (i + 1) / 10, "count": hist[i]} for i in range(10)],
+        "decisions_by_action": by_action,
+        "failure_categories": by_failure,
+        "top_signals": sorted(
+            ({"signal": k, "count": v} for k, v in signal_counts.items()),
+            key=lambda x: x["count"], reverse=True,
+        )[:8],
+    }
+
+
+@app.get("/analytics/economics")
+def analytics_economics(
+    avg_fraud_loss: float = Query(38000.0, ge=0, description="Simulation assumption: avg ₹ lost per undetected fraud"),
+    avg_false_decline_cost: float = Query(520.0, ge=0, description="Simulation assumption: avg ₹ cost of a wrong decline"),
+):
+    """
+    Decision economics from the held-out confusion matrix. All figures are
+    SIMULATED — labelled assumptions, not Razorpay data.
+    """
+    try:
+        with open(_METRICS_PATH) as fh:
+            m = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError):
+        raise HTTPException(status_code=503, detail="metrics.json not found — run `python ml/train.py`")
+
+    cm = next(x for x in m["models"] if x["model"] == m["selected_model"])["confusion_matrix"]
+    tp, fp, fn = cm["tp"], cm["fp"], cm["fn"]
+    prevented = tp * avg_fraud_loss
+    missed = fn * avg_fraud_loss
+    fp_cost = fp * avg_false_decline_cost
+    return {
+        "basis": f"held-out test set ({m['dataset']['test_records']} transactions), selected model",
+        "assumptions": {
+            "avg_fraud_loss": avg_fraud_loss,
+            "avg_false_decline_cost": avg_false_decline_cost,
+            "note": "Simulation assumptions — not real Razorpay figures.",
+        },
+        "confusion_matrix": cm,
+        "fraud_cases_detected": tp,
+        "fraud_cases_missed": fn,
+        "false_positives": fp,
+        "estimated_prevented_loss": round(prevented, 2),
+        "estimated_missed_loss": round(missed, 2),
+        "estimated_false_positive_cost": round(fp_cost, 2),
+        "net_estimated_impact": round(prevented - fp_cost, 2),
+    }
+
+
+# --- network -------------------------------------------------------
+
+@app.get("/network/graph")
+def network_graph(db: Session = Depends(get_db)):
+    return network.graph_snapshot(db)
+
+
+@app.get("/network/clusters")
+def network_clusters(db: Session = Depends(get_db)):
+    cl = network.clusters(db)
+    high = [c for c in cl if c["network_risk"] >= 0.5]
+    connected_accounts = sorted({m for c in cl for m in c["members"]})
+    return {
+        "clusters": cl,
+        "summary": {
+            "active_clusters": len(cl),
+            "high_risk_clusters": len(high),
+            "connected_accounts": len(connected_accounts),
+            "network_exposure": round(sum(c["volume"] for c in high), 2),
+        },
+    }
+
+
+@app.get("/network/entity/{kind}/{ref}")
+def network_entity(kind: str, ref: str, db: Session = Depends(get_db)):
+    detail = network.entity_detail(db, kind, ref)
+    if not detail:
+        raise HTTPException(status_code=404, detail="entity not found in the payment graph")
+    return detail
 
 
 @app.get("/customers/{customer_id}", response_model=CustomerProfile)

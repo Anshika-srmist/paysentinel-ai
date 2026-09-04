@@ -20,6 +20,9 @@ pandas==3.0.5
 scikit-learn==1.9.0
 joblib==1.6.0
 
+# --- Network risk engine (graph detectors — no GNN) ---
+networkx==3.4.2
+
 # --- AI explainability layer (Day 3). Optional: the explainer falls back to
 #     a deterministic template when this is absent or PAYSENTINEL_USE_LLM != 1.
 anthropic==0.69.0

@@ -1,0 +1,194 @@
+{
+  "generated": "2026-09-04",
+  "dataset": {
+    "name": "synthetic payment events (same feature logic as the simulator)",
+    "total_records": 8000,
+    "training_records": 6400,
+    "test_records": 1600,
+    "positive_rate": 0.1426,
+    "feature_count": 6
+  },
+  "imbalance_handling": "class_weight='balanced' on both models",
+  "evaluation": "held-out 20% stratified test split; no metric computed on training data",
+  "selected_model": "Random Forest + class weighting",
+  "models": [
+    {
+      "model": "Logistic Regression + class weighting (baseline)",
+      "threshold": 0.5,
+      "precision": 0.6447,
+      "recall": 0.8596,
+      "f1": 0.7368,
+      "pr_auc": 0.8697,
+      "roc_auc": 0.9327,
+      "false_positive_rate": 0.0787,
+      "confusion_matrix": {
+        "tp": 196,
+        "fp": 108,
+        "tn": 1264,
+        "fn": 32
+      }
+    },
+    {
+      "model": "Random Forest + class weighting",
+      "threshold": 0.5,
+      "precision": 0.9,
+      "recall": 0.8684,
+      "f1": 0.8839,
+      "pr_auc": 0.8942,
+      "roc_auc": 0.9305,
+      "false_positive_rate": 0.016,
+      "confusion_matrix": {
+        "tp": 198,
+        "fp": 22,
+        "tn": 1350,
+        "fn": 30
+      }
+    }
+  ],
+  "threshold_sweep": [
+    {
+      "threshold": 0.1,
+      "precision": 0.2727,
+      "recall": 0.9211,
+      "false_positives": 560,
+      "fraud_captured": 210,
+      "fraud_missed": 18
+    },
+    {
+      "threshold": 0.15,
+      "precision": 0.5,
+      "recall": 0.886,
+      "false_positives": 202,
+      "fraud_captured": 202,
+      "fraud_missed": 26
+    },
+    {
+      "threshold": 0.2,
+      "precision": 0.7128,
+      "recall": 0.8816,
+      "false_positives": 81,
+      "fraud_captured": 201,
+      "fraud_missed": 27
+    },
+    {
+      "threshold": 0.25,
+      "precision": 0.8163,
+      "recall": 0.8772,
+      "false_positives": 45,
+      "fraud_captured": 200,
+      "fraud_missed": 28
+    },
+    {
+      "threshold": 0.3,
+      "precision": 0.8578,
+      "recall": 0.8728,
+      "false_positives": 33,
+      "fraud_captured": 199,
+      "fraud_missed": 29
+    },
+    {
+      "threshold": 0.35,
+      "precision": 0.8767,
+      "recall": 0.8728,
+      "false_positives": 28,
+      "fraud_captured": 199,
+      "fraud_missed": 29
+    },
+    {
+      "threshold": 0.4,
+      "precision": 0.8844,
+      "recall": 0.8728,
+      "false_positives": 26,
+      "fraud_captured": 199,
+      "fraud_missed": 29
+    },
+    {
+      "threshold": 0.45,
+      "precision": 0.8924,
+      "recall": 0.8728,
+      "false_positives": 24,
+      "fraud_captured": 199,
+      "fraud_missed": 29
+    },
+    {
+      "threshold": 0.5,
+      "precision": 0.9,
+      "recall": 0.8684,
+      "false_positives": 22,
+      "fraud_captured": 198,
+      "fraud_missed": 30
+    },
+    {
+      "threshold": 0.55,
+      "precision": 0.9041,
+      "recall": 0.8684,
+      "false_positives": 21,
+      "fraud_captured": 198,
+      "fraud_missed": 30
+    },
+    {
+      "threshold": 0.6,
+      "precision": 0.9078,
+      "recall": 0.864,
+      "false_positives": 20,
+      "fraud_captured": 197,
+      "fraud_missed": 31
+    },
+    {
+      "threshold": 0.65,
+      "precision": 0.9116,
+      "recall": 0.8596,
+      "false_positives": 19,
+      "fraud_captured": 196,
+      "fraud_missed": 32
+    },
+    {
+      "threshold": 0.7,
+      "precision": 0.9159,
+      "recall": 0.8596,
+      "false_positives": 18,
+      "fraud_captured": 196,
+      "fraud_missed": 32
+    },
+    {
+      "threshold": 0.75,
+      "precision": 0.9202,
+      "recall": 0.8596,
+      "false_positives": 17,
+      "fraud_captured": 196,
+      "fraud_missed": 32
+    },
+    {
+      "threshold": 0.8,
+      "precision": 0.9194,
+      "recall": 0.8509,
+      "false_positives": 17,
+      "fraud_captured": 194,
+      "fraud_missed": 34
+    },
+    {
+      "threshold": 0.85,
+      "precision": 0.9194,
+      "recall": 0.8509,
+      "false_positives": 17,
+      "fraud_captured": 194,
+      "fraud_missed": 34
+    },
+    {
+      "threshold": 0.9,
+      "precision": 0.9167,
+      "recall": 0.8202,
+      "false_positives": 17,
+      "fraud_captured": 187,
+      "fraud_missed": 41
+    }
+  ],
+  "feature_importances": {
+    "amount": 0.3225,
+    "amount_ratio_to_typical": 0.4324,
+    "is_new_device": 0.0933,
+    "is_new_payment_method": 0.0209,
+    "is_unusual_hour": 0.003,
+    "recent_failed_count": 0.1277
+  }
+}
