@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '../components/AppShell.jsx'
 import { Icon } from '../components/Icon.jsx'
@@ -11,20 +11,66 @@ import { money } from '../lib/format.js'
 import './pages.css'
 
 const METHODS = ['UPI', 'CARD', 'NETBANKING', 'WALLET']
+const NEW_CUSTOMER = '__new__'
 
-const PRESETS = {
-  typical: { label: 'Typical payment', customer_id: 'CUST_7', amount: 2200, payment_method: 'UPI', device_id: 'DEVICE_7' },
-  anomalous: { label: 'Large amount, new device', customer_id: 'CUST_7', amount: 95000, payment_method: 'CARD', device_id: 'NEW_DEVICE_A1' },
-  cardtest: { label: 'Small card test', customer_id: 'CUST_18', amount: 120, payment_method: 'CARD', device_id: 'NEW_DEVICE_C9' },
+function freshId(prefix) {
+  return `${prefix}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`
 }
 
 export function LiveCheck() {
-  const [form, setForm] = useState(PRESETS.typical)
+  const [customers, setCustomers] = useState([])
+  const [custState, setCustState] = useState('loading') // loading | ok | error
+  const [picked, setPicked] = useState(NEW_CUSTOMER)
+  const [form, setForm] = useState({ customer_id: freshId('CUST_NEW'), amount: 2200, payment_method: 'UPI', device_id: freshId('DEVICE') })
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    api.customers({}).then((rows) => { setCustomers(rows); setCustState('ok') })
+      .catch(() => setCustState('error'))
+  }, [])
+
+  const baseline = useMemo(
+    () => customers.find((c) => c.customer_id === form.customer_id),
+    [customers, form.customer_id],
+  )
+
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+
+  const pickCustomer = (id) => {
+    setPicked(id)
+    setResult(null)
+    if (id === NEW_CUSTOMER) {
+      setForm({ customer_id: freshId('CUST_NEW'), amount: 2200, payment_method: 'UPI', device_id: freshId('DEVICE') })
+      return
+    }
+    const c = customers.find((x) => x.customer_id === id)
+    setForm({
+      customer_id: id,
+      amount: c?.typical_amount ? Math.round(c.typical_amount) : 2200,
+      payment_method: c?.usual_payment_method || 'UPI',
+      device_id: c?.usual_device || freshId('DEVICE'),
+    })
+  }
+
+  const applyPreset = (name) => {
+    setResult(null)
+    if (name === 'typical') {
+      if (picked === NEW_CUSTOMER) return
+      set('amount', baseline?.typical_amount ? Math.round(baseline.typical_amount) : 2200)
+      set('device_id', baseline?.usual_device || form.device_id)
+      set('payment_method', baseline?.usual_payment_method || 'UPI')
+    } else if (name === 'spike') {
+      const base = (picked !== NEW_CUSTOMER && baseline?.typical_amount) || 2000
+      set('amount', Math.round(base * 30))
+      set('device_id', freshId('NEW_DEVICE'))
+      set('payment_method', 'CARD')
+    } else if (name === 'newcust_big') {
+      pickCustomer(NEW_CUSTOMER)
+      setForm((f) => ({ ...f, amount: 65000, payment_method: 'CARD' }))
+    }
+  }
 
   const run = async (e) => {
     e?.preventDefault()
@@ -32,7 +78,7 @@ export function LiveCheck() {
     setError(null)
     try {
       const body = {
-        customer_id: form.customer_id.trim() || 'CUST_1',
+        customer_id: form.customer_id.trim(),
         amount: Number(form.amount) || 0,
         payment_method: form.payment_method,
         device_id: form.device_id.trim() || undefined,
@@ -52,23 +98,45 @@ export function LiveCheck() {
     <>
       <PageHeader
         title="Live check"
-        subtitle="The pre-payment call. A checkout or PSP posts an attempt and gets an action back before the money moves — POST /assess."
+        subtitle="The pre-payment call, against real customer history — POST /assess. Pick a real customer so the model has a baseline to judge against, or test a brand-new one."
       />
 
       <div className="inv">
         {/* form */}
         <form className="card card-pad checkform" onSubmit={run}>
+          <div className="field">
+            <span>Customer</span>
+            {custState === 'error' ? (
+              <p className="muted" style={{ fontSize: 12.5 }}>Couldn’t load customers — check the API.</p>
+            ) : (
+              <select className="idfield" value={picked} onChange={(e) => pickCustomer(e.target.value)} disabled={custState === 'loading'}>
+                <option value={NEW_CUSTOMER}>+ New customer (no history — cold start)</option>
+                {customers.map((c) => (
+                  <option key={c.customer_id} value={c.customer_id}>
+                    {c.customer_id} — {c.total_events} txns{c.typical_amount ? ` · typ. ₹${Math.round(c.typical_amount).toLocaleString('en-IN')}` : ''}{c.history_good ? ' · established' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+            {picked !== NEW_CUSTOMER && baseline ? (
+              <p className="fieldnote">
+                Real customer, {baseline.total_events} prior payments · usually {baseline.usual_payment_method} from <span className="mono">{baseline.usual_device}</span>
+                {baseline.history_good ? ' · established history' : ' · thin history'}. Values below are scored against this baseline.
+              </p>
+            ) : (
+              <p className="fieldnote">No prior history — the model falls back to neutral defaults for this one, which is itself a valid test.</p>
+            )}
+          </div>
+
           <div className="checkform__presets">
-            {Object.entries(PRESETS).map(([k, p]) => (
-              <button type="button" key={k} className="fpill" onClick={() => { setForm(p); setResult(null) }}>
-                {p.label}
-              </button>
-            ))}
+            <button type="button" className="fpill" disabled={picked === NEW_CUSTOMER} onClick={() => applyPreset('typical')}>Typical for them</button>
+            <button type="button" className="fpill" onClick={() => applyPreset('spike')}>Spike + new device</button>
+            <button type="button" className="fpill" onClick={() => applyPreset('newcust_big')}>New customer, big first payment</button>
           </div>
 
           <label className="field">
             <span>Customer ID</span>
-            <input className="idfield" value={form.customer_id} onChange={(e) => set('customer_id', e.target.value)} />
+            <input className="idfield mono" value={form.customer_id} onChange={(e) => set('customer_id', e.target.value)} />
           </label>
 
           <label className="field">
@@ -90,14 +158,14 @@ export function LiveCheck() {
           <label className="field">
             <span>Device ID</span>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input className="idfield" value={form.device_id} onChange={(e) => set('device_id', e.target.value)} />
-              <button type="button" className="fpill" onClick={() => set('device_id', `NEW_DEVICE_${Math.random().toString(36).slice(2, 6).toUpperCase()}`)}>
+              <input className="idfield mono" value={form.device_id} onChange={(e) => set('device_id', e.target.value)} />
+              <button type="button" className="fpill" onClick={() => set('device_id', freshId('NEW_DEVICE'))}>
                 New device
               </button>
             </div>
           </label>
 
-          <button className="btn-primary" type="submit" disabled={loading} style={{ marginTop: 6, justifyContent: 'center' }}>
+          <button className="btn-primary" type="submit" disabled={loading || !form.customer_id.trim() || !(Number(form.amount) > 0)} style={{ marginTop: 6, justifyContent: 'center' }}>
             {loading ? 'Checking…' : <>Run check <Icon name="bolt" size={15} strokeWidth={2.2} /></>}
           </button>
         </form>
@@ -110,8 +178,8 @@ export function LiveCheck() {
 
           {!result && !error && (
             <div className="card">
-              <EmptyState icon="shield" title="No check run yet"
-                hint="Pick a preset or fill the form, then Run check to see the verdict." />
+              <EmptyState icon="shield" title="Ready to assess a payment"
+                hint="Pick a real customer (or a new one), set an amount and device, then Run check to generate risk, behavioural and policy analysis." />
             </div>
           )}
 

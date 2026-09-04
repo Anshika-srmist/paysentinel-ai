@@ -71,6 +71,14 @@ def test_anomalous_attempt_scores_higher_than_a_normal_one():
     assert weird["composite_risk"] >= normal["composite_risk"]
 
 
+def test_garbage_input_is_rejected_not_silently_accepted():
+    assert _assess(amount=-500).status_code == 422                       # negative amount
+    assert _assess(amount=0).status_code == 422                         # zero amount
+    assert _assess(payment_method="BITCOIN").status_code == 422          # unknown method
+    assert _assess(customer_id="a").status_code == 422                   # too short
+    assert _assess(customer_id="cust; drop table").status_code == 422    # bad characters
+
+
 def test_api_key_gate(monkeypatch):
     monkeypatch.setattr("app.main._API_KEY", "s3cret")
     assert _assess().status_code == 401

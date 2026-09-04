@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.database import Base, SessionLocal, engine, get_db, run_light_migrations
-from app.engine import network
+from app.engine import network, scenarios
 from app.engine.feature_extractor import customer_baseline
 from app.engine.pipeline import process_event
 from app.integrations import razorpay as rz
@@ -29,6 +29,7 @@ from app.models.schemas import (
     AssessRequest,
     AssessResponse,
     CustomerProfile,
+    CustomerSummary,
     DecisionDetail,
     DecisionListItem,
     PaymentEventIn,
@@ -258,6 +259,25 @@ def razorpay_order(body: dict):
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Razorpay order create failed: {exc}")
     return {"order_id": order["id"], "amount": order["amount"], "currency": order["currency"], "key_id": _RZP_KEY_ID}
+
+
+# --- demo scenario injector -----------------------------------------
+# Fires a small, realistic burst through the REAL pipeline on cue — for a
+# live walkthrough where you trigger a specific outcome instead of only
+# pointing at pre-seeded data. Not a mock: every event is scored for real.
+
+@app.get("/simulate/scenarios")
+def list_scenarios():
+    return {"scenarios": [{"name": k, **v} for k, v in scenarios.SCENARIO_META.items()]}
+
+
+@app.post("/simulate/scenario")
+def simulate_scenario(body: dict, db: Session = Depends(get_db)):
+    name = body.get("name")
+    try:
+        return scenarios.run(db, name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/payments", response_model=List[PaymentEventOut])
@@ -557,6 +577,35 @@ def network_entity(kind: str, ref: str, db: Session = Depends(get_db)):
     if not detail:
         raise HTTPException(status_code=404, detail="entity not found in the payment graph")
     return detail
+
+
+@app.get("/customers", response_model=List[CustomerSummary])
+def list_customers(limit: int = Query(30, ge=1, le=200), db: Session = Depends(get_db)):
+    """
+    Real customers with real history — for picking a genuine test subject
+    (Live Check) instead of typing an arbitrary id with no baseline to
+    judge against. Aggregate fields only, most recently active first.
+    """
+    rows = (
+        db.query(PaymentEvent.customer_id, func.max(PaymentEvent.event_time).label("last_seen"))
+        .group_by(PaymentEvent.customer_id)
+        .order_by(func.max(PaymentEvent.event_time).desc())
+        .limit(limit)
+        .all()
+    )
+    out = []
+    for customer_id, last_seen in rows:
+        baseline = customer_baseline(db, customer_id)
+        out.append(CustomerSummary(
+            customer_id=customer_id,
+            total_events=baseline["prior_event_count"],
+            typical_amount=baseline["typical_amount"],
+            usual_device=baseline["usual_device"],
+            usual_payment_method=baseline["usual_payment_method"],
+            history_good=baseline["history_good"],
+            last_seen=last_seen,
+        ))
+    return out
 
 
 @app.get("/customers/{customer_id}", response_model=CustomerProfile)

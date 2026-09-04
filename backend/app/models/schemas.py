@@ -1,6 +1,8 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict
+from typing import Any, Dict, List, Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field
+
+PAYMENT_METHODS = ("UPI", "CARD", "NETBANKING", "WALLET")
 
 
 class PaymentEventIn(BaseModel):
@@ -116,15 +118,28 @@ class AssessRequest(BaseModel):
 
     This is the integration surface: a checkout, a PSP, or a Razorpay webhook
     posts the attempt here and gets back an action (and why) synchronously.
+    Validated so garbage input is rejected rather than silently "working":
+    a real amount, a known payment method, sane id lengths.
     """
-    customer_id: str
-    amount: float
-    payment_method: str
+    customer_id: str = Field(min_length=2, max_length=40, pattern=r"^[A-Za-z0-9_\-]+$")
+    amount: float = Field(gt=0, le=10_000_000)
+    payment_method: Literal["UPI", "CARD", "NETBANKING", "WALLET"]
     transaction_id: Optional[str] = None     # generated if the caller doesn't supply one
-    merchant_id: Optional[str] = None
-    bank: Optional[str] = None
-    device_id: Optional[str] = None
+    merchant_id: Optional[str] = Field(default=None, max_length=40)
+    bank: Optional[str] = Field(default=None, max_length=50)
+    device_id: Optional[str] = Field(default=None, max_length=40, pattern=r"^[A-Za-z0-9_\-]*$")
     event_time: Optional[datetime] = None
+
+
+class CustomerSummary(BaseModel):
+    """One row for the 'pick a real customer' list — aggregate only."""
+    customer_id: str
+    total_events: int
+    typical_amount: Optional[float] = None
+    usual_device: Optional[str] = None
+    usual_payment_method: Optional[str] = None
+    history_good: bool = False
+    last_seen: datetime
 
 
 class AssessResponse(BaseModel):

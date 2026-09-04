@@ -205,6 +205,8 @@
 
 .field { display: grid; gap: 6px; }
 .field > span { font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); }
+.fieldnote { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--ink-secondary); }
+select.idfield { appearance: none; background-image: none; }
 
 .seg { display: flex; gap: 4px; background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 3px; }
 .seg__btn {

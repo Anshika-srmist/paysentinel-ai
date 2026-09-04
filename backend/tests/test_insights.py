@@ -49,5 +49,16 @@ def test_unknown_customer_is_404():
     assert client.get("/customers/NOBODY_HERE").status_code == 404
 
 
+def test_customer_list_offers_real_pickable_customers():
+    cid = f"CUST_PICK_{uuid.uuid4().hex[:6]}"
+    _seed_customer(cid, n=5, amount=3000.0)
+    rows = client.get("/customers", params={"limit": 200}).json()
+    mine = next((r for r in rows if r["customer_id"] == cid), None)
+    assert mine is not None
+    assert mine["total_events"] == 5
+    assert mine["typical_amount"] is not None
+    assert mine["usual_payment_method"] == "UPI"
+
+
 def test_timeline_endpoint_is_gone():
     assert client.get("/stats/timeline").status_code == 404

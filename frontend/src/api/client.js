@@ -39,6 +39,7 @@ export const api = {
   },
   assess: (body, opts = {}) => request('/assess', { ...opts, method: 'POST', body }),
   policy: (opts) => request('/policy', opts),
+  customers: ({ limit = 100, ...opts } = {}) => request(`/customers?limit=${limit}`, opts),
   customer: (id, opts) => request(`/customers/${encodeURIComponent(id)}`, opts),
   modelMetrics: (opts) => request('/model/metrics', opts),
   analytics: (opts) => request('/analytics', opts),
