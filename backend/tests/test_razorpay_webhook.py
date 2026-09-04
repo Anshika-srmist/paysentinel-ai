@@ -79,6 +79,15 @@ def test_webhook_is_idempotent_on_retry():
     assert again["scored"] is False and "already" in again["reason"]
 
 
+def test_razorpay_config_reports_disabled_without_keys(monkeypatch):
+    monkeypatch.setattr("app.main._RZP_KEY_ID", "")
+    monkeypatch.setattr("app.main._RZP_KEY_SECRET", "")
+    cfg = client.get("/razorpay/config").json()
+    assert cfg["enabled"] is False
+    # and the order endpoint refuses cleanly
+    assert client.post("/razorpay/order", json={"amount": 100}).status_code == 503
+
+
 def test_signature_is_verified_when_a_secret_is_configured(monkeypatch):
     secret = "whsec_test"
     monkeypatch.setenv("PAYSENTINEL_RAZORPAY_WEBHOOK_SECRET", secret)

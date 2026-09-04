@@ -23,3 +23,7 @@ joblib==1.6.0
 # --- AI explainability layer (Day 3). Optional: the explainer falls back to
 #     a deterministic template when this is absent or PAYSENTINEL_USE_LLM != 1.
 anthropic==0.69.0
+
+# --- Razorpay integration (real-mode testing). Optional: only needed to
+#     create orders for the checkout page; webhook ingestion has no deps.
+razorpay==1.4.2

@@ -142,6 +142,11 @@ real payment flow ask *"is this attempt safe?"* up front:
 You can't hook into Google Pay / PhonePe internals (closed systems) — but this
 is exactly how a PSP or merchant would consume a risk engine.
 
+**Real-mode testing:** `frontend/public/checkout.html` is a working Razorpay
+(test-mode) checkout — pay with a test card and Razorpay fires a real webhook
+that PaySentinel scores. `POST /razorpay/order` creates the order; set
+`RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`. Full loop: [`docs/RAZORPAY_TESTING.md`](docs/RAZORPAY_TESTING.md).
+
 ### Operational scripts
 
 ```bash

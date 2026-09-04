@@ -204,6 +204,54 @@ async def razorpay_webhook(
     }
 
 
+# --- Razorpay checkout support (for real-mode testing) --------------------
+# Test-mode keys from the Razorpay dashboard. Order creation needs the
+# secret; the checkout page only needs the (publishable) key id.
+_RZP_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "").strip()
+_RZP_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "").strip()
+
+try:
+    import razorpay as _razorpay_sdk
+except ImportError:  # pragma: no cover
+    _razorpay_sdk = None
+
+
+@app.get("/razorpay/config")
+def razorpay_config():
+    """What the checkout page needs to know: the publishable key + whether it's wired."""
+    return {"enabled": bool(_RZP_KEY_ID and _RZP_KEY_SECRET and _razorpay_sdk), "key_id": _RZP_KEY_ID}
+
+
+@app.post("/razorpay/order")
+def razorpay_order(body: dict):
+    """Create a Razorpay order for the checkout page. `body`: {amount, customer_id?}."""
+    if not (_RZP_KEY_ID and _RZP_KEY_SECRET and _razorpay_sdk):
+        raise HTTPException(status_code=503, detail="Razorpay not configured (set RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET)")
+    try:
+        amount = float(body.get("amount", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="amount must be a number")
+    if amount < 1:
+        raise HTTPException(status_code=400, detail="amount must be at least ₹1")
+
+    client = _razorpay_sdk.Client(auth=(_RZP_KEY_ID, _RZP_KEY_SECRET))
+    notes = {}
+    if body.get("customer_id"):
+        notes["customer_id"] = str(body["customer_id"])
+    if body.get("device_id"):
+        notes["device_id"] = str(body["device_id"])
+    try:
+        order = client.order.create({
+            "amount": int(round(amount * 100)),   # paise
+            "currency": "INR",
+            "notes": notes,
+            "payment_capture": 1,
+        })
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Razorpay order create failed: {exc}")
+    return {"order_id": order["id"], "amount": order["amount"], "currency": order["currency"], "key_id": _RZP_KEY_ID}
+
+
 @app.get("/payments", response_model=List[PaymentEventOut])
 def list_payments(
     limit: int = Query(50, ge=1, le=500),

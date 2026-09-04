@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Test checkout — PaySentinel AI</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <style>
+    :root { --pine:#1f5a3a; --pine-d:#164a2f; --ink:#2b1f16; --muted:#6b5d4f; --border:#e4ddcd; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      font-family: 'Inter', system-ui, sans-serif; color: var(--ink);
+      background: #f6f3ea;
+    }
+    .card {
+      width: min(420px, 92vw); background: #fff; border: 1px solid var(--border);
+      border-radius: 16px; box-shadow: 0 2px 8px rgba(43,31,22,.06), 0 12px 40px rgba(43,31,22,.08);
+      padding: 26px 26px 24px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .brand .mark {
+      width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff;
+      background: linear-gradient(155deg, var(--pine) 15%, #6f8d45 130%);
+    }
+    .brand b { font-size: 15px; letter-spacing: -.01em; }
+    .brand b span { color: var(--pine); }
+    p.sub { margin: 6px 0 20px; font-size: 13px; color: var(--muted); }
+    label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: #978978; margin: 14px 0 6px; }
+    input[type=text], input[type=number] {
+      width: 100%; padding: 10px 12px; font: inherit; color: var(--ink);
+      border: 1px solid #d3cab9; border-radius: 8px; background: #fff;
+    }
+    input:focus { outline: none; border-color: var(--pine); box-shadow: 0 0 0 3px rgba(31,90,58,.18); }
+    .checkrow { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+    button {
+      width: 100%; margin-top: 20px; padding: 12px; font: inherit; font-weight: 600;
+      color: #fff; background: var(--pine); border: 0; border-radius: 8px; cursor: pointer;
+    }
+    button:hover { background: var(--pine-d); }
+    button:disabled { background: #cdc4b4; cursor: not-allowed; }
+    .note { margin-top: 16px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .msg { margin-top: 16px; font-size: 13px; padding: 11px 13px; border-radius: 10px; line-height: 1.5; }
+    .msg.ok { background: #e6f4ea; color: #137333; border: 1px solid #bfe3ca; }
+    .msg.err { background: #fce9e8; color: #c5221f; border: 1px solid #f3c9c6; }
+    a { color: var(--pine); font-weight: 600; }
+    code { font-family: ui-monospace, Menlo, Consolas, monospace; background: #f2ede0; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <span class="mark">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6l7-3z"/></svg>
+      </span>
+      <b>Pay<span>Sentinel</span></b>
+    </div>
+    <p class="sub">Test checkout. A test-mode Razorpay payment — no real money moves — that PaySentinel scores via webhook.</p>
+
+    <div id="form">
+      <label for="amt">Amount (₹)</label>
+      <input id="amt" type="number" value="2500" min="1" step="1" />
+
+      <label for="cust">Customer ID <span style="text-transform:none;font-weight:400">(optional — helps the model build history)</span></label>
+      <input id="cust" type="text" value="CUST_TEST_1" />
+
+      <div class="checkrow">
+        <input id="newdev" type="checkbox" />
+        <label for="newdev" style="margin:0;text-transform:none;letter-spacing:0;font-weight:400;font-size:13px">Simulate a new device</label>
+      </div>
+
+      <button id="pay">Pay with Razorpay</button>
+      <p class="note">
+        Test card <code>4111 1111 1111 1111</code>, any future expiry, any CVV, any OTP.
+        Test UPI <code>success@razorpay</code>.
+      </p>
+    </div>
+
+    <div id="out"></div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const API = (params.get('api') || '/api').replace(/\/$/, '');
+    const dash = params.get('dash') || '/';
+    const out = document.getElementById('out');
+    const payBtn = document.getElementById('pay');
+
+    const show = (cls, html) => { out.innerHTML = `<div class="msg ${cls}">${html}</div>`; };
+
+    async function init() {
+      try {
+        const cfg = await (await fetch(`${API}/razorpay/config`)).json();
+        if (!cfg.enabled) {
+          payBtn.disabled = true;
+          show('err', 'Razorpay isn’t wired up yet. Set <code>RAZORPAY_KEY_ID</code> and <code>RAZORPAY_KEY_SECRET</code> on the backend (test-mode keys from the Razorpay dashboard), then reload.');
+        }
+      } catch (e) {
+        payBtn.disabled = true;
+        show('err', `Can’t reach the backend at <code>${API}</code>. Pass <code>?api=&lt;backend-url&gt;</code> in the URL.`);
+      }
+    }
+
+    payBtn.addEventListener('click', async () => {
+      payBtn.disabled = true;
+      out.innerHTML = '';
+      const amount = Number(document.getElementById('amt').value) || 0;
+      const customer_id = document.getElementById('cust').value.trim();
+      const device_id = document.getElementById('newdev').checked
+        ? 'NEW_DEVICE_' + Math.random().toString(36).slice(2, 7).toUpperCase()
+        : undefined;
+
+      let order;
+      try {
+        const res = await fetch(`${API}/razorpay/order`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount, customer_id, device_id }),
+        });
+        if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+        order = await res.json();
+      } catch (e) {
+        payBtn.disabled = false;
+        return show('err', `Couldn’t create the order: ${e.message}`);
+      }
+
+      const rzp = new Razorpay({
+        key: order.key_id,
+        order_id: order.order_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'PaySentinel Test Merchant',
+        description: 'Test-mode payment',
+        notes: { customer_id, ...(device_id ? { device_id } : {}) },
+        theme: { color: '#1f5a3a' },
+        handler: (r) => {
+          show('ok', `Payment <code>${r.razorpay_payment_id}</code> completed. Razorpay will fire a webhook to PaySentinel — open the <a href="${dash}">dashboard</a> → Live stream to see it scored.`);
+          payBtn.disabled = false;
+        },
+        modal: { ondismiss: () => { payBtn.disabled = false; } },
+      });
+      rzp.on('payment.failed', (resp) => {
+        show('err', `Payment failed: ${resp.error.description}. PaySentinel still gets the <code>payment.failed</code> webhook — check the dashboard.`);
+        payBtn.disabled = false;
+      });
+      rzp.open();
+    });
+
+    init();
+  </script>
+</body>
+</html>
