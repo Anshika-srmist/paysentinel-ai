@@ -160,14 +160,33 @@ export function Analytics() {
           </div>
           {eco.loading && !eco.data ? <Skeleton h={90} /> : eco.data && (
             <>
-              <div className="ecogrid">
-                <div><span className="tnum" style={{ color: 'var(--ok)' }}>{compactMoney(eco.data.estimated_prevented_loss)}</span><em>prevented loss ({num(eco.data.fraud_cases_detected)} caught)</em></div>
-                <div><span className="tnum" style={{ color: 'var(--danger)' }}>{compactMoney(eco.data.estimated_false_positive_cost)}</span><em>false-positive cost ({num(eco.data.false_positives)} declines)</em></div>
-                <div><span className="tnum" style={{ color: 'var(--warn)' }}>{compactMoney(eco.data.estimated_missed_loss)}</span><em>missed fraud ({num(eco.data.fraud_cases_missed)})</em></div>
-                <div><span className="tnum" style={{ color: 'var(--accent)' }}>{compactMoney(eco.data.net_estimated_impact)}</span><em>net estimated impact</em></div>
+              <div className="ecoledger">
+                <div className="ecoledger__row">
+                  <span className="ecoledger__sign" style={{ color: 'var(--ok)' }}>+</span>
+                  <span className="ecoledger__label">Fraud loss prevented<em>{num(eco.data.fraud_cases_detected)} caught × {money(eco.data.assumptions.avg_fraud_loss)}</em></span>
+                  <span className="ecoledger__val tnum" style={{ color: 'var(--ok)' }}>{money(eco.data.estimated_prevented_loss)}</span>
+                </div>
+                <div className="ecoledger__row">
+                  <span className="ecoledger__sign" style={{ color: 'var(--danger)' }}>−</span>
+                  <span className="ecoledger__label">False-decline cost<em>{num(eco.data.false_positives)} wrong declines × {money(eco.data.assumptions.avg_false_decline_cost)}</em></span>
+                  <span className="ecoledger__val tnum" style={{ color: 'var(--danger)' }}>{money(eco.data.estimated_false_positive_cost)}</span>
+                </div>
+                <div className="ecoledger__row ecoledger__row--total">
+                  <span className="ecoledger__sign">=</span>
+                  <span className="ecoledger__label">Net impact vs. no fraud detection</span>
+                  <span className="ecoledger__val tnum" style={{ color: 'var(--accent-strong)' }}>{money(eco.data.net_estimated_impact)}</span>
+                </div>
+              </div>
+              <div className="ecogap">
+                <Icon name="alert" size={14} strokeWidth={2} />
+                <span>
+                  <b>Coverage gap:</b> {num(eco.data.fraud_cases_missed)} fraud cases scored below threshold and got through —
+                  ≈ {money(eco.data.residual_missed_fraud_loss)} in residual exposure. This is what a better model would recover;
+                  it is not a cost the system adds, so it is not in the net.
+                </span>
               </div>
               <p className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>
-                Computed from the held-out confusion matrix ({eco.data.basis}). {eco.data.assumptions.note}
+                {eco.data.net_formula}. Computed from the held-out confusion matrix ({eco.data.basis}). {eco.data.assumptions.note}
               </p>
             </>
           )}

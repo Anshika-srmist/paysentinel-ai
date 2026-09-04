@@ -148,10 +148,24 @@
 .cm--tn { background: var(--surface-sunken); } .cm--tn span { color: var(--ink); }
 
 .thrslider { width: 100%; accent-color: var(--accent); }
-.thrgrid, .ecogrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-top: 12px; }
-.thrgrid > div, .ecogrid > div { text-align: center; }
-.thrgrid span, .ecogrid span { display: block; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.thrgrid em, .ecogrid em { font-style: normal; font-size: 11px; color: var(--ink-muted); }
+.thrgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-top: 12px; }
+.thrgrid > div { text-align: center; }
+.thrgrid span { display: block; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.thrgrid em { font-style: normal; font-size: 11px; color: var(--ink-muted); }
+
+.ecoledger { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+.ecoledger__row { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+.ecoledger__row:last-child { border-bottom: none; }
+.ecoledger__row--total { background: var(--accent-wash); }
+.ecoledger__sign { font-size: 16px; font-weight: 700; text-align: center; color: var(--ink-muted); }
+.ecoledger__label { font-size: 13px; font-weight: 600; display: flex; flex-direction: column; gap: 2px; }
+.ecoledger__label em { font-style: normal; font-weight: 400; font-size: 11px; color: var(--ink-muted); }
+.ecoledger__row--total .ecoledger__label { font-size: 13.5px; }
+.ecoledger__val { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.ecoledger__row--total .ecoledger__val { font-size: 18px; }
+
+.ecogap { display: flex; gap: 9px; align-items: flex-start; margin-top: 12px; padding: 10px 13px; border-radius: var(--r-sm); background: var(--warn-wash); border: 1px solid color-mix(in srgb, var(--warn) 24%, transparent); font-size: 12px; line-height: 1.5; color: var(--ink); }
+.ecogap svg { color: var(--warn); flex: none; margin-top: 2px; }
 .ecoassume { display: flex; flex-wrap: wrap; gap: 14px; }
 .ecoassume label { display: grid; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); }
 .ecoassume .idfield { width: 160px; }

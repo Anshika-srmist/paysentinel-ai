@@ -169,11 +169,18 @@ risk increase, or the retry limit).
 ## 9. Financial impact — decision economics
 
 The Analytics page turns the held-out confusion matrix into money, under
-**clearly labelled simulation assumptions** you can change:
+**clearly labelled simulation assumptions** you can change (avg. fraud loss ₹,
+avg. false-decline cost ₹):
 
-- avg. fraud loss ₹ · avg. false-decline cost ₹
-- → estimated prevented loss · false-positive cost · missed-fraud cost · **net
-  estimated impact**
+```
+  +  fraud loss prevented      = TP × fraud_loss
+  −  false-decline cost        = FP × decline_cost
+  =  net impact vs. no detection
+```
+
+Shown separately, **not** part of the net: the model's **coverage gap** —
+`FN × fraud_loss`, the fraud that scored below threshold and got through. It's
+what a better model would recover, not a cost the system introduces.
 
 The point: the system optimises *business impact*, not blind fraud detection.
 These figures are simulated and never represented as real Razorpay data.

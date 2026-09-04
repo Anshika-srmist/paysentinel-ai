@@ -502,9 +502,10 @@ def analytics_economics(
 
     cm = next(x for x in m["models"] if x["model"] == m["selected_model"])["confusion_matrix"]
     tp, fp, fn = cm["tp"], cm["fp"], cm["fn"]
-    prevented = tp * avg_fraud_loss
-    missed = fn * avg_fraud_loss
-    fp_cost = fp * avg_false_decline_cost
+    prevented = tp * avg_fraud_loss                  # fraud loss the model stopped (TP)
+    missed = fn * avg_fraud_loss                     # fraud loss still incurred (FN) — the coverage gap
+    fp_cost = fp * avg_false_decline_cost            # cost of the model's own wrong declines (FP)
+    net = prevented - fp_cost                        # net vs. running no fraud detection
     return {
         "basis": f"held-out test set ({m['dataset']['test_records']} transactions), selected model",
         "assumptions": {
@@ -516,10 +517,14 @@ def analytics_economics(
         "fraud_cases_detected": tp,
         "fraud_cases_missed": fn,
         "false_positives": fp,
-        "estimated_prevented_loss": round(prevented, 2),
-        "estimated_missed_loss": round(missed, 2),
-        "estimated_false_positive_cost": round(fp_cost, 2),
-        "net_estimated_impact": round(prevented - fp_cost, 2),
+        # the two figures that make up the net, with sign
+        "estimated_prevented_loss": round(prevented, 2),          # +
+        "estimated_false_positive_cost": round(fp_cost, 2),       # -
+        "net_estimated_impact": round(net, 2),                    # = prevented - fp_cost
+        "net_formula": "net = fraud loss prevented minus false-decline cost",
+        # context, NOT part of the net: fraud the model didn't catch
+        "residual_missed_fraud_loss": round(missed, 2),
+        "residual_note": "The model's coverage gap — fraud below the threshold. Not a cost the system adds, so it is not in the net.",
     }
 
 
