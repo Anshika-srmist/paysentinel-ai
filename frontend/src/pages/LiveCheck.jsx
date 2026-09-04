@@ -138,17 +138,34 @@ export function LiveCheck() {
 
               <div style={{ marginTop: 18 }}>
                 <div className="row-between" style={{ marginBottom: 8 }}>
-                  <span className="eyebrow">Risk score</span>
-                  <span className="eyebrow muted">{result.model_name}</span>
+                  <span className="eyebrow">Composite risk</span>
                 </div>
-                <RiskMeter score={result.risk_score} variant="block" />
+                <RiskMeter score={result.composite_risk} variant="block" />
+                <div className="rbd" style={{ marginTop: 12 }}>
+                  <div className="rbd__row"><span className="rbd__label">Transaction model</span>
+                    <div className="rbd__track"><div className="rbd__fill" style={{ width: `${(result.ml_risk ?? 0) * 100}%`, background: 'var(--accent)' }} /></div>
+                    <span className="rbd__val tnum">{(result.ml_risk ?? 0).toFixed(2)}</span></div>
+                  <div className="rbd__row"><span className="rbd__label">Behavioural</span>
+                    <div className="rbd__track"><div className="rbd__fill" style={{ width: `${(result.behavioral_risk ?? 0) * 100}%`, background: 'var(--alt)' }} /></div>
+                    <span className="rbd__val tnum">{(result.behavioral_risk ?? 0).toFixed(2)}</span></div>
+                  <div className="rbd__row"><span className="rbd__label">Network</span>
+                    <div className="rbd__track"><div className="rbd__fill" style={{ width: `${(result.network_risk ?? 0) * 100}%`, background: 'var(--danger)' }} /></div>
+                    <span className="rbd__val tnum">{(result.network_risk ?? 0).toFixed(2)}</span></div>
+                </div>
               </div>
 
               <div className="explain">
                 <div className="explain__label">
-                  <Icon name="sparkles" size={14} strokeWidth={2} /> Why
+                  <Icon name="layers" size={14} strokeWidth={2} /> Decision explanation
                 </div>
-                <p className="explain__text">{result.explanation}</p>
+                <p className="explain__text">{result.explanation_sections?.summary || result.explanation}</p>
+                {result.explanation_sections?.why_this_action && (
+                  <dl className="explain__grid">
+                    <dt>What the model saw</dt><dd>{result.explanation_sections.what_the_model_saw}</dd>
+                    <dt>What the network saw</dt><dd>{result.explanation_sections.what_the_network_saw}</dd>
+                    <dt>Why this action</dt><dd>{result.explanation_sections.why_this_action}</dd>
+                  </dl>
+                )}
               </div>
 
               {result.signals?.length > 0 && (

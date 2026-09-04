@@ -21,7 +21,9 @@ const NAV = [
   { to: '/stream', label: 'Live stream', icon: 'activity' },
   { to: '/check', label: 'Live check', icon: 'bolt' },
   { to: '/investigation', label: 'Investigation', icon: 'search' },
-  { to: '/policy', label: 'Policy', icon: 'layers' },
+  { to: '/network', label: 'Network', icon: 'layers' },
+  { to: '/analytics', label: 'Analytics', icon: 'spark' },
+  { to: '/policy', label: 'Policy', icon: 'shield' },
 ]
 
 function ApiStatus() {

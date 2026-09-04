@@ -17,6 +17,8 @@ const fmtDateTime = (iso) => {
   return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
+const SEV = { critical: '--danger', high: '--warn', medium: '--alt', low: '--ink-muted' }
+
 function KV({ k, v, mono }) {
   return (
     <div className="kv__item">
@@ -35,47 +37,55 @@ function FeatCell({ k, v, flag }) {
   )
 }
 
+function BreakdownBar({ label, value, color = 'var(--accent)' }) {
+  return (
+    <div className="rbd__row">
+      <span className="rbd__label">{label}</span>
+      <div className="rbd__track">
+        <div className="rbd__fill" style={{ width: `${Math.max(2, (value ?? 0) * 100)}%`, background: color }} />
+      </div>
+      <span className="rbd__val tnum">{value == null ? '—' : value.toFixed(2)}</span>
+    </div>
+  )
+}
+
 export function Investigation() {
   const { id } = useParams()
-  const { data, error, loading } = usePolling(
-    (signal) => api.decision(id, { signal }),
-    8000,
-    [id],
-  )
+  const { data, error } = usePolling((signal) => api.decision(id, { signal }), 8000, [id])
 
   if (error && !data) {
     return (
       <>
         <PageHeader title="Investigation" />
         <div className="card">
-          <EmptyState
-            icon="search"
-            title={`Decision #${id} not found`}
+          <EmptyState icon="search" title={`Decision #${id} not found`}
             hint="It may not have been scored yet, or the ID is wrong."
-            action={<Link to="/investigation" className="btn-primary" style={{ marginTop: 6 }}>Back to investigation</Link>}
-          />
+            action={<Link to="/investigation" className="btn-primary" style={{ marginTop: 6 }}>Back to investigation</Link>} />
         </div>
       </>
     )
   }
-
   if (!data) {
     return (
       <>
         <PageHeader title="Investigation" />
         <div className="inv">
-          <div className="card card-pad"><Skeleton h={340} /></div>
-          <div className="card card-pad"><Skeleton h={220} /></div>
+          <div className="card card-pad"><Skeleton h={360} /></div>
+          <div className="card card-pad"><Skeleton h={240} /></div>
         </div>
       </>
     )
   }
 
-  const { event: ev, decision: dec, recommended_action, signals = [], features: f = {} } = data
+  const {
+    event: ev, decision: dec, recommended_action, features: f = {},
+    behavioral = {}, network: net = {}, explanation_sections: ex = {},
+    audit = [], risk_breakdown: rb = {},
+  } = data
   const meta = metaFor(dec.decision)
   const band = riskBand(dec.risk_score)
   const failed = ev.status === 'FAILED'
-  const isLLM = dec.explanation_source === 'llm'
+  const allSignals = [...(behavioral.signals || []), ...(net.signals || [])]
 
   return (
     <>
@@ -85,7 +95,7 @@ export function Investigation() {
 
       <PageHeader
         title={<span className="mono">{ev.transaction_id}</span>}
-        subtitle={`Decision #${dec.id} · scored by ${dec.model_name || 'risk model'}`}
+        subtitle={`Decision #${dec.id} · composite risk scored by the fusion engine`}
       />
 
       <div className="inv">
@@ -118,32 +128,77 @@ export function Investigation() {
 
             <div style={{ marginTop: 18 }}>
               <div className="row-between" style={{ marginBottom: 8 }}>
-                <span className="eyebrow">Risk score</span>
+                <span className="eyebrow">Composite risk</span>
                 <span className="eyebrow" style={{ color: `var(${band.varName})` }}>{band.label}</span>
               </div>
               <RiskMeter score={dec.risk_score} variant="block" />
             </div>
 
+            {/* risk breakdown */}
+            <div className="rbd">
+              <BreakdownBar label="Transaction model" value={rb.ml} color="var(--accent)" />
+              <BreakdownBar label="Behavioural" value={rb.behavioral} color="var(--alt)" />
+              <BreakdownBar label="Network" value={rb.network} color="var(--danger)" />
+              <div className="rbd__row">
+                <span className="rbd__label">Rule severity</span>
+                <span className={`sevchip sev--${(rb.rule_severity || 'low').toLowerCase()}`}>{rb.rule_severity || 'LOW'}</span>
+                <span />
+              </div>
+            </div>
+
             <div className="explain">
               <div className="explain__label">
-                <Icon name="sparkles" size={14} strokeWidth={2} />
-                AI explanation
-                <span className="explain__badge">{isLLM ? 'LLM-generated' : 'template'}</span>
+                <Icon name="layers" size={14} strokeWidth={2} />
+                Decision explanation
               </div>
-              <p className="explain__text">{dec.explanation || '—'}</p>
+              <p className="explain__text">{ex.summary || dec.explanation || '—'}</p>
+              {ex.what_the_model_saw && (
+                <dl className="explain__grid">
+                  <dt>What the model saw</dt><dd>{ex.what_the_model_saw}</dd>
+                  <dt>What the network saw</dt><dd>{ex.what_the_network_saw}</dd>
+                  <dt>Why this action</dt><dd>{ex.why_this_action}</dd>
+                  <dt>What should happen next</dt><dd>{ex.what_should_happen_next}</dd>
+                </dl>
+              )}
             </div>
 
             <div className="signals">
               <span className="eyebrow">Triggered signals</span>
-              {signals.length === 0 ? (
-                <div className="signals__none">No risk signals fired for this payment.</div>
+              {allSignals.length === 0 ? (
+                <div className="signals__none">No behavioural or network signals fired for this payment.</div>
               ) : (
-                signals.map((s, i) => (
-                  <div className="signal" key={i}>
-                    <Icon name="alert" size={15} strokeWidth={2} />
-                    <span>{s}</span>
+                allSignals.map((s, i) => (
+                  <div className="signal signal--rich" key={i}>
+                    <span className={`sevdot sev--${s.severity}`} />
+                    <div>
+                      <div className="signal__head">
+                        {s.signal}
+                        <span className={`sevtag sev--${s.severity}`}>{s.severity}</span>
+                      </div>
+                      <div className="signal__ev">{s.evidence}</div>
+                    </div>
                   </div>
                 ))
+              )}
+            </div>
+          </section>
+
+          {/* audit trail */}
+          <section className="card">
+            <div className="card-head"><h2>Audit trail</h2><span className="muted" style={{ fontSize: 12 }}>every step is traced</span></div>
+            <div className="card-pad">
+              {audit.length === 0 ? <span className="muted" style={{ fontSize: 13 }}>No audit trail recorded.</span> : (
+                <ol className="audit">
+                  {audit.map((a, i) => (
+                    <li className="audit__item" key={i}>
+                      <span className="audit__dot" />
+                      <div>
+                        <div className="audit__step">{a.step}</div>
+                        <div className="audit__detail">{a.detail}</div>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
               )}
             </div>
           </section>
@@ -168,10 +223,33 @@ export function Investigation() {
 
         {/* -------- aside -------- */}
         <div className="stack">
+          {net.signals?.length > 0 && (
+            <section className="card card-pad">
+              <div className="eyebrow" style={{ marginBottom: 10 }}>Network exposure</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span className="tnum" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--danger)' }}>
+                  {money(net.cluster_exposure)}
+                </span>
+                <span className="muted" style={{ fontSize: 12 }}>connected volume</span>
+              </div>
+              <p className="secondary" style={{ fontSize: 12.5, marginTop: 8 }}>{net.conclusion}</p>
+              {net.connected_accounts?.length > 0 && (
+                <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {net.connected_accounts.slice(0, 6).map((c) => (
+                    <Link key={c} to={`/customers/${encodeURIComponent(c)}`} className="tag mono">{c}</Link>
+                  ))}
+                </div>
+              )}
+              <Link to="/network" className="card-link" style={{ marginTop: 12 }}>
+                Open network view <Icon name="chevron" size={13} />
+              </Link>
+            </section>
+          )}
+
           <section className="card card-pad">
             <div className="eyebrow" style={{ marginBottom: 10 }}>Recovery outlook</div>
             {dec.recovery_probability == null ? (
-              <p className="muted" style={{ fontSize: 13 }}>Not applicable — the payment succeeded.</p>
+              <p className="muted" style={{ fontSize: 13 }}>Not applicable — the payment did not fail.</p>
             ) : (
               <>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
@@ -183,6 +261,9 @@ export function Investigation() {
                 <div className="riskmeter__track" style={{ width: '100%', height: 10, marginTop: 10 }}>
                   <div className="riskmeter__fill" style={{ width: `${dec.recovery_probability * 100}%`, background: 'var(--ok)' }} />
                 </div>
+                <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+                  Bounded retry — stop on success, risk increase, or the retry limit.
+                </p>
               </>
             )}
           </section>
@@ -210,9 +291,9 @@ export function Investigation() {
             <div className="card-head"><h2>Decision record</h2></div>
             <div className="card-pad" style={{ paddingTop: 4, paddingBottom: 4 }}>
               <div className="kv">
+                <KV k="Policy rule fired" v={ex.why_this_action?.match(/policy: ([^)]+)/)?.[1] || '—'} mono />
                 <KV k="Failure category" v={FAILURE_LABEL[dec.failure_category] || dec.failure_category || '—'} />
-                <KV k="Scored by" v={dec.model_name} />
-                <KV k="Explanation" v={isLLM ? 'LLM-generated' : 'Template fallback'} />
+                <KV k="Composite risk" v={dec.risk_score?.toFixed(4)} />
                 <KV k="Decided at" v={fmtDateTime(dec.created_at)} />
               </div>
             </div>

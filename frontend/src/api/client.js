@@ -40,4 +40,15 @@ export const api = {
   assess: (body, opts = {}) => request('/assess', { ...opts, method: 'POST', body }),
   policy: (opts) => request('/policy', opts),
   customer: (id, opts) => request(`/customers/${encodeURIComponent(id)}`, opts),
+  modelMetrics: (opts) => request('/model/metrics', opts),
+  analytics: (opts) => request('/analytics', opts),
+  economics: ({ fraudLoss, declineCost, ...opts } = {}) => {
+    const q = new URLSearchParams()
+    if (fraudLoss != null) q.set('avg_fraud_loss', String(fraudLoss))
+    if (declineCost != null) q.set('avg_false_decline_cost', String(declineCost))
+    return request(`/analytics/economics${q.toString() ? `?${q}` : ''}`, opts)
+  },
+  networkGraph: (opts) => request('/network/graph', opts),
+  networkClusters: (opts) => request('/network/clusters', opts),
+  networkEntity: (kind, ref, opts) => request(`/network/entity/${kind}/${encodeURIComponent(ref)}`, opts),
 }

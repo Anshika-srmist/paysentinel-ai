@@ -61,6 +61,24 @@ export function Policy() {
             <span>“{data.principle}”</span>
           </blockquote>
 
+          <section className="card card-pad">
+            <div className="flowline">
+              <span className="flowbox">Model recommendation<em>composite risk score</em></span>
+              <Icon name="chevron" size={16} className="muted" />
+              <span className="flowbox">Policy evaluation<em>deterministic rules</em></span>
+              <Icon name="chevron" size={16} className="muted" />
+              <span className="flowbox flowbox--final">Final decision<em>the permitted action</em></span>
+            </div>
+            {data.fusion && (
+              <p className="secondary" style={{ fontSize: 12.5, marginTop: 14 }}>
+                <b>Composite risk</b> = {data.fusion.blend.ml}·transaction&nbsp;ML + {data.fusion.blend.behavioral}·behavioural + {data.fusion.blend.network}·network,
+                then raised to a floor by rule severity
+                ({Object.entries(data.fusion.severity_floor).filter(([, v]) => v > 0).map(([k, v]) => `${k} ≥ ${v}`).join(', ')}).
+                It is a risk indicator, not a calibrated probability.
+              </p>
+            )}
+          </section>
+
           <section className="card">
             <div className="card-head"><h2>The policy</h2><span className="muted" style={{ fontSize: 12 }}>evaluated top to bottom</span></div>
             <div className="card-pad">

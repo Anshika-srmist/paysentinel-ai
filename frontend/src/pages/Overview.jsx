@@ -28,6 +28,8 @@ function Tile({ label, value, sub, icon, accent }) {
 export function Overview() {
   const stats = usePolling((signal) => api.stats({ signal }), 5000)
   const feed = usePolling((signal) => api.decisions({ limit: 60, signal }), 5000)
+  const clusters = usePolling((signal) => api.networkClusters({ signal }), 20000)
+  const eco = usePolling((signal) => api.economics({ signal }), 120000)
 
   const s = stats.data
   const decisions = feed.data || []
@@ -52,7 +54,7 @@ export function Overview() {
     <>
       <PageHeader
         title="Overview"
-        subtitle="Every payment scored for risk, classified by failure cause, and resolved into a policy-controlled decision."
+        subtitle="Adaptive payment risk & recovery — every attempt scored by transaction ML, behavioural and network signals, resolved into a policy-controlled decision."
         right={<LiveBadge lastUpdated={stats.lastUpdated} stale={stats.stale} onRefresh={() => { stats.refresh(); feed.refresh() }} />}
       />
 
@@ -62,23 +64,29 @@ export function Overview() {
         </div>
       )}
 
-      <div className="tiles">
+      <div className="tiles tiles--6">
         {loading ? (
-          Array.from({ length: 5 }).map((_, i) => (
+          Array.from({ length: 6 }).map((_, i) => (
             <div className="card tile" key={i}><Skeleton h={64} /></div>
           ))
         ) : (
           <>
-            <Tile label="Payments" icon="activity" value={num(s?.total_payments)} sub={<>ingested &amp; scored</>} />
+            <Tile label="Transactions" icon="activity" value={num(s?.total_payments)} sub="ingested & scored" />
             <Tile label="Success rate" icon="check" value={pct(successRate, 1)}
-              sub={<><b>{num(s?.successful)}</b> of {num(s?.total_payments)} succeeded</>} />
-            <Tile label="Failed" icon="bolt" value={num(s?.failed)} sub="routed through recovery logic" />
-            <Tile label="Flagged" icon="shield" value={num(s?.high_risk)} sub="held or sent to verification" />
+              sub={<><b>{num(s?.successful)}</b> of {num(s?.total_payments)}</>} />
+            <Tile label="Failed" icon="bolt" value={num(s?.failed)} sub="through recovery logic" />
+            <Tile label="High risk" icon="shield" value={num(s?.high_risk)} sub="held or verified" />
             <Tile label="Revenue at risk" icon="lock" accent value={compactMoney(s?.revenue_at_risk)}
-              sub={<>{money(s?.revenue_at_risk, true)} exposure</>} />
+              sub="tied up in flagged payments" />
+            <Tile label="Fraud prevented" icon="lock"
+              value={eco.data ? compactMoney(eco.data.estimated_prevented_loss) : '—'}
+              sub={<>est. · {clusters.data?.summary?.high_risk_clusters ?? 0} risk cluster(s)</>} />
           </>
         )}
       </div>
+      <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+        Financial figures are simulated (held-out model results × labelled assumptions) — not real Razorpay data.
+      </p>
 
       <section className="card" style={{ marginTop: 16 }}>
         <div className="card-head">

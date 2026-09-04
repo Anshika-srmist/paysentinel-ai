@@ -63,7 +63,7 @@ export function LiveStream() {
           <span>Transaction</span>
           <span className="hide-sm">Decision</span>
           <span className="r">Amount</span>
-          <span className="hide-sm">Risk</span>
+          <span className="hide-sm">Composite risk</span>
           <span className="hide-sm">Failure</span>
           <span className="r hide-sm">When</span>
           <span />
@@ -97,7 +97,14 @@ export function LiveStream() {
                 </div>
                 <div><StatusChip decision={d.decision} size="sm" /></div>
                 <div className={`stream__amt ${failed ? 'is-failed' : ''}`}>{money(d.amount)}</div>
-                <div className="stream__cat"><RiskMeter score={d.risk_score} /></div>
+                <div className="stream__cat">
+                  <RiskMeter score={d.risk_score} />
+                  {(d.ml_risk != null || d.network_risk != null) && (
+                    <div className="stream__sub tnum">
+                      ml {(d.ml_risk ?? 0).toFixed(2)} · net {(d.network_risk ?? 0).toFixed(2)}
+                    </div>
+                  )}
+                </div>
                 <div className="stream__cat">{FAILURE_LABEL[d.failure_category] || '—'}</div>
                 <div className="stream__time">{timeAgo(d.created_at)}</div>
                 <Icon name="chevron" size={16} className="stream__chev" />
