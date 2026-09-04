@@ -52,4 +52,6 @@ export const api = {
   networkGraph: (opts) => request('/network/graph', opts),
   networkClusters: (opts) => request('/network/clusters', opts),
   networkEntity: (kind, ref, opts) => request(`/network/entity/${kind}/${encodeURIComponent(ref)}`, opts),
+  scenarios: (opts) => request('/simulate/scenarios', opts),
+  runScenario: (name, opts = {}) => request('/simulate/scenario', { ...opts, method: 'POST', body: { name } }),
 }

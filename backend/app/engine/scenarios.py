@@ -44,7 +44,12 @@ def _result(db: Session, rows: list[PaymentEvent], decisions: list[RiskDecision]
     return {
         "events_created": len(rows),
         "decisions": [
-            {"transaction_id": r.transaction_id, "decision": d.decision, "risk_score": float(d.risk_score)}
+            {
+                "decision_id": d.id,
+                "transaction_id": r.transaction_id,
+                "decision": d.decision,
+                "risk_score": float(d.risk_score),
+            }
             for r, d in zip(rows, decisions)
         ],
         "hold_count": sum(1 for d in decisions if d.decision == "HOLD"),

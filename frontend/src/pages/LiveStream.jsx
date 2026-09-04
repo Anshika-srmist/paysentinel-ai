@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader, LiveBadge } from '../components/AppShell.jsx'
 import { Icon } from '../components/Icon.jsx'
@@ -21,6 +21,30 @@ export function LiveStream() {
   const feed = usePolling((signal) => api.decisions({ limit: 90, signal }), 3000)
   const stats = usePolling((signal) => api.stats({ signal }), 10000)
 
+  const [scenarioList, setScenarioList] = useState([])
+  const [injecting, setInjecting] = useState(null)
+  const [injectResult, setInjectResult] = useState(null)
+  const [injectError, setInjectError] = useState(null)
+
+  useEffect(() => {
+    api.scenarios().then((r) => setScenarioList(r.scenarios)).catch(() => {})
+  }, [])
+
+  const inject = async (name) => {
+    setInjecting(name)
+    setInjectError(null)
+    try {
+      const result = await api.runScenario(name)
+      setInjectResult(result)
+      feed.refresh()
+      stats.refresh()
+    } catch (err) {
+      setInjectError(err.message)
+    } finally {
+      setInjecting(null)
+    }
+  }
+
   const rows = feed.data || []
   const counts = stats.data?.decisions_by_action || {}
   const total = Object.values(counts).reduce((a, b) => a + b, 0)
@@ -41,6 +65,65 @@ export function LiveStream() {
       {feed.error && !rows.length && (
         <div className="errbar" style={{ marginBottom: 16 }}>
           <Icon name="alert" size={16} /> Can’t reach the API. The stream resumes automatically once the backend is up.
+        </div>
+      )}
+
+      {scenarioList.length > 0 && (
+        <div className="card card-pad injector">
+          <div className="injector__head">
+            <span className="eyebrow"><Icon name="bolt" size={13} strokeWidth={2.2} /> Trigger a scenario</span>
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              Fires a real burst through the real pipeline right now — for a live walkthrough, not a mock.
+            </span>
+          </div>
+          <div className="injector__row">
+            {scenarioList.map((s) => (
+              <button
+                key={s.name}
+                type="button"
+                className={`fpill ${s.name === 'coordinated_ring' ? 'fpill--hero' : ''}`}
+                disabled={Boolean(injecting)}
+                onClick={() => inject(s.name)}
+              >
+                {injecting === s.name ? 'Running…' : s.label}
+              </button>
+            ))}
+          </div>
+
+          {injectError && (
+            <div className="errbar" style={{ marginTop: 10 }}><Icon name="alert" size={15} /> {injectError}</div>
+          )}
+
+          {injectResult && (
+            <div className="injector__result">
+              <div className="injector__resulthead">
+                <Icon name="check" size={14} strokeWidth={2.2} />
+                <b>{injectResult.label}</b>
+                <span className="muted">
+                  — {injectResult.events_created} event{injectResult.events_created === 1 ? '' : 's'}
+                  {injectResult.hold_count ? `, ${injectResult.hold_count} held` : ''}, expected {injectResult.expect}
+                </span>
+              </div>
+              <div className="injector__decisions">
+                {injectResult.decisions.slice(0, 8).map((d) => (
+                  <span
+                    key={d.transaction_id}
+                    className="injector__d"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/investigation/${d.decision_id}`)}
+                  >
+                    <StatusChip decision={d.decision} size="sm" />
+                    <span className="mono">{shortId(d.transaction_id)}</span>
+                    <span className="tnum">{d.risk_score.toFixed(2)}</span>
+                  </span>
+                ))}
+                {injectResult.decisions.length > 8 && (
+                  <span className="muted" style={{ fontSize: 12 }}>+{injectResult.decisions.length - 8} more</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

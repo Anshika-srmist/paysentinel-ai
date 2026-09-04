@@ -77,6 +77,30 @@
 .fpill__count { font-variant-numeric: tabular-nums; color: var(--ink-muted); font-weight: 600; }
 .fpill.is-on .fpill__count { color: var(--accent); }
 
+/* ============ scenario injector ============ */
+.injector { margin-bottom: 14px; }
+.injector__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.injector__row { display: flex; flex-wrap: wrap; gap: 7px; }
+.fpill--hero { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); color: var(--danger); }
+.fpill--hero:hover { background: var(--danger-wash); }
+.fpill:disabled { opacity: 0.55; cursor: default; }
+.injector__result {
+  margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border);
+}
+.injector__resulthead {
+  display: flex; align-items: center; gap: 7px; font-size: 13px;
+  color: var(--ok); margin-bottom: 10px;
+}
+.injector__resulthead .muted { color: var(--ink-muted); font-weight: 400; }
+.injector__decisions { display: flex; flex-wrap: wrap; gap: 8px; }
+.injector__d {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 9px; border-radius: var(--r-pill);
+  background: var(--surface); border: 1px solid var(--border);
+  font-size: 12px; cursor: pointer; transition: background var(--dur-fast) var(--ease);
+}
+.injector__d:hover { background: var(--surface-hover); }
+
 .stream { overflow: hidden; }
 
 .stream__head, .stream__row {

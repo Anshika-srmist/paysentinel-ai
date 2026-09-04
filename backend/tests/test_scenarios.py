@@ -27,6 +27,7 @@ def test_high_risk_scenario_holds():
     body = r.json()
     assert body["events_created"] == 1
     assert body["decisions"][0]["decision"] == "HOLD"
+    assert isinstance(body["decisions"][0]["decision_id"], int)  # links to /investigation/{decision_id}
     assert body["hold_count"] == 1
 
 
