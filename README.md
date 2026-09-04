@@ -1,241 +1,245 @@
-# PaySentinel AI
-### An Intelligent Payment Risk, Failure Recovery & Decision Engine
+# PaySentinel
 
-**Razorpay AI Buildathon 2026 — Track: AI Risk Manager**
+### Adaptive Payment Risk & Recovery Engine
 
-Most systems answer *"what happened to this payment?"* PaySentinel AI answers
-*"what should happen next?"* — every payment event is scored for risk,
-classified by why it failed (if it did), and resolved into a policy-controlled
-decision with a plain-English explanation, instead of a flat success/fail
-message.
+**Razorpay AI Buildathon 2026 — AI Risk Manager**
 
-Full architecture and design rationale: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+> **Live:** dashboard <https://paysentinel-ai.vercel.app> · API <https://paysentinel-ai.onrender.com>
+> Synthetic transaction environment. Prototype / demonstration — not connected to real Razorpay data or real money.
+
+Most fraud tools answer *"is this transaction fraudulent?"* PaySentinel answers a
+harder set of questions for every payment attempt, in real time:
+
+**What happened? · Why is it risky? · Is the risk isolated or part of a larger
+network? · What action should be taken? · Why? · What is the financial impact?**
+
+It combines transaction-level ML, behavioural signals and graph-based network
+analysis into one **composite risk score**, runs that through a **deterministic
+policy engine** (the model recommends; the policy decides), explains every
+decision from structured evidence, records an **audit trail**, and measures the
+**decision economics** — because catching fraud at the cost of declining good
+customers is not a win.
 
 ---
 
-## Status
+## 1. Problem
 
-- [x] **Day 1** — Payment event simulator (5 scenario types) + FastAPI ingestion + persistence
-- [x] **Day 2** — Risk scoring model (Logistic Regression vs. Random Forest, compared on precision/recall/F1/PR-AUC) + rule-based failure classifier
-- [x] **Day 3** — Feature extraction from live customer history + deterministic decision engine + recovery-probability heuristic + AI explainability layer (LLM with a template fallback), all wired into ingestion
-- [x] **Day 4** — React dashboard (Overview / Live Stream / Investigation), polling-based live feed; deploy config for Vercel
-- [ ] **Day 5** — Pitch video, final docs, submission
+Payment fraud detection is hard for reasons a plain classifier ignores:
 
-## Quickstart
+- **Extreme class imbalance** — fraud is a low single-digit percent of traffic,
+  so *accuracy* is meaningless (predict "not fraud" always → ~86% here).
+- **False positives are expensive** — a wrongly declined payment loses the sale
+  *and* the customer's trust. The right objective is business impact, not raw
+  recall.
+- **Fraud is coordinated** — rings share devices and instruments and move fast.
+  A per-transaction model that scores each attempt in isolation misses the
+  pattern.
+- **"Because the model said so" is not acceptable** in a payments context —
+  every decision needs a traceable reason and a human in the loop for the
+  serious ones.
+
+## 2. Architecture
+
+```
+ Payment event
+      ↓
+ Feature engineering        (amount ratio, device/method/merchant novelty, failure streak, hour)
+      ↓
+ ┌───────────────────────┐  ┌────────────────────┐  ┌──────────────────┐
+ │ Transaction ML model  │  │ Behavioural signals│  │ Network analysis │
+ │ Random Forest         │  │ scored + evidenced │  │ NetworkX detectors│
+ └───────────┬───────────┘  └─────────┬──────────┘  └────────┬─────────┘
+             └──────────────┬─────────┴───────────────┬──────┘
+                    Risk fusion  →  Composite Risk Score
+                            ↓
+                    Deterministic policy engine
+                            ↓
+                    Decision  (APPROVE / RETRY / OFFER_ALTERNATIVE / VERIFY / HOLD)
+                            ↓
+              Structured explanation  +  Audit trail
+                            ↓
+                 Outcome / feedback  →  Analytics · Decision economics
+```
+
+Frontend: React (Vite), a hand-built design system (light/dark), polling-based
+live feed. Backend: FastAPI + SQLite. ML: scikit-learn. Graph: NetworkX (no
+GNN — explainable detectors). Deploy: Vercel + Render.
+
+## 3. ML approach — real held-out evaluation
+
+`ml/train.py` trains on a **stratified 80/20 split** and reports every metric on
+the **held-out test set only** — nothing in the app computes performance on
+training data. Class imbalance is handled with `class_weight='balanced'` on both
+models. Results are written to `ml/metrics.json`, which the `/model/metrics`
+endpoint and the Analytics page read directly.
+
+| model (test set, n=1,600) | precision | recall | F1 | **PR-AUC** | ROC-AUC | **FPR** |
+|---|---|---|---|---|---|---|
+| Logistic Regression + class weighting (baseline) | 0.64 | 0.86 | 0.74 | 0.87 | 0.93 | **7.9%** |
+| **Random Forest + class weighting** (selected) | **0.90** | **0.87** | **0.88** | **0.89** | 0.93 | **1.6%** |
+
+Selected on **PR-AUC** (the honest lead metric on a 14%-positive problem). The
+Random Forest matches the baseline's recall at **one-fifth the false-positive
+rate** — that gap is the whole argument for it. Confusion matrix (RF):
+TP 198 · FP 22 · FN 30 · TN 1350. The Analytics page also shows a **threshold
+sweep** (recall vs. false positives across the operating range).
+
+Dataset: `ml/generate_training_data.py` builds 8,000 synthetic rows from the
+same feature logic as the simulator (so every feature is human-readable), with
+deliberate class overlap on *every* feature + ~2% label noise so the task isn't
+trivially separable. Feature importances are the model's own values, surfaced on
+the Policy page (amount-vs-typical ≈ 43%, absolute amount ≈ 32%, failure streak
+≈ 13%, new device ≈ 9%).
+
+## 4. Behavioural signals
+
+`app/engine/behavioral.py` scores each attempt against the customer's own
+history and emits `LOW / MEDIUM / HIGH / CRITICAL` signals with **evidence** and
+a **contribution weight** — phrased for an operator, not raw feature names:
+
+> *Amount deviation — HIGH — "₹48,920 vs customer's typical ₹7,400 (6.6×)"*
+
+Covers amount deviation, velocity, new device / method / merchant, unusual hour,
+recent failure streak. Behavioural risk = a documented weighted sum.
+
+## 5. Network analysis
+
+`app/engine/network.py` builds a NetworkX graph (customer / device / merchant
+nodes) and runs **explainable detectors** over the neighbourhood of each
+transaction — no GNN, every score traces to a countable fact:
+
+- **shared device** — accounts transacting from one device
+- **transaction velocity** — burst on a device or customer
+- **merchant concentration** — linked accounts hitting one merchant
+- **amount similarity** — near-identical amounts across the cluster
+- **dense cluster** — a tight multi-account group with high activity
+
+Network risk = a documented weighted sum. A device shared by 2–3 accounts is
+*not* alone a strong signal (families, shared machines) — it needs corroboration
+by velocity or amount-similarity. Clusters, entity detail and the graph are
+exposed at `/network/*` and rendered on the **Network** page.
+
+## 6. Risk fusion + policy
+
+```
+composite = 0.45·ML  +  0.20·behavioural  +  0.35·network
+then raised to a floor by rule severity  (CRITICAL ≥ 0.92, HIGH ≥ 0.66)
+```
+
+Labelled **"Composite Risk Score"** — a risk indicator with a documented
+blend, **not** a calibrated probability. The rule-severity floor stops a
+known-bad pattern from being averaged away by two calm signals.
+
+The **deterministic policy engine** (`decision_engine.py`) takes the composite
+and returns the action:
+
+| condition | decision |
+|---|---|
+| composite > 0.90 | **HOLD** (block + case for review) |
+| temporary failure AND composite < 0.30 | **RETRY** (bounded) |
+| payment-method failure AND good history | **OFFER_ALTERNATIVE** |
+| 0.30 ≤ composite ≤ 0.90 | **VERIFY** (step-up) |
+| otherwise | **APPROVE** |
+
+*The model recommends a score. The policy decides the permitted action.* Every
+evaluation shows which rule fired.
+
+## 7. Explainability
+
+Every decision produces a **structured** explanation from the evidence the
+engine actually generated — never invented:
+
+- *What the model saw* · *What the network saw* · *Why this action was chosen
+  (which policy rule)* · *What an operator should do next*
+
+If an LLM is enabled (`PAYSENTINEL_USE_LLM=1`) it only *rewrites the one-line
+summary*, grounded in the same evidence. If it's off or errors, the
+deterministic summary stands. The user always sees "Decision explanation".
+
+## 8. Audit trail + recovery
+
+Every decision persists a timeline: *payment received → features → ML scored →
+network analysed → composite → policy rule → decision → case created*. Shown on
+Investigation.
+
+Failed low-risk payments get a **bounded recovery plan** — a `RETRY` carries a
+reason, an expected recovery probability, and a stopping rule (stop on success,
+risk increase, or the retry limit).
+
+## 9. Financial impact — decision economics
+
+The Analytics page turns the held-out confusion matrix into money, under
+**clearly labelled simulation assumptions** you can change:
+
+- avg. fraud loss ₹ · avg. false-decline cost ₹
+- → estimated prevented loss · false-positive cost · missed-fraud cost · **net
+  estimated impact**
+
+The point: the system optimises *business impact*, not blind fraud detection.
+These figures are simulated and never represented as real Razorpay data.
+
+## 10. Integration surface
+
+- **`POST /assess`** — score a payment *before it settles*, get
+  `{decision, composite_risk, ml/behavioural/network, explanation}`
+  synchronously. A checkout or PSP calls this and acts on the verdict.
+- **`POST /webhooks/razorpay`** — ingest real Razorpay (test-mode)
+  `payment.captured` / `payment.failed` webhooks; HMAC-verified, idempotent.
+- **`frontend/public/checkout.html`** — a working Razorpay test-mode checkout.
+  Full loop: [`docs/RAZORPAY_TESTING.md`](docs/RAZORPAY_TESTING.md).
+
+## 11. Limitations & responsible AI
+
+- **Synthetic data only.** No real customer data, no payment credentials stored,
+  no autonomous movement of real money.
+- The composite score is a **risk indicator, not a calibrated probability**.
+- Financial impact figures are **simulations** with labelled assumptions.
+- The customer view shows **aggregate risk signals only** — not a browsable
+  per-customer transaction ledger.
+- **Defensive only.** High-risk decisions (`HOLD` / `VERIFY`) require human
+  review; deterministic policy guardrails sit above the ML; every decision is
+  auditable.
+- Feedback from analyst review is *collected for future model evaluation* — the
+  model does not auto-retrain.
+
+## 12. Setup
 
 ```bash
+# backend
 cd backend
 pip install -r requirements.txt
+python ml/generate_training_data.py && python ml/train.py   # writes metrics.json + saved_model.pkl
+uvicorn app.main:app --reload                               # :8000, seeds ~140 events incl. the coordinated ring
 
-# terminal 1 — start the API
-uvicorn app.main:app --reload
-
-# terminal 2 — start the simulator (continuous)
-python simulator/simulate_payments.py
-
-# or fire a quick batch instead of waiting on the continuous feed
-python simulator/simulate_payments.py --count 50
-```
-
-```bash
-# terminal 3 — the dashboard (proxies /api -> localhost:8000 in dev)
+# frontend
 cd frontend
 npm install
-npm run dev            # http://localhost:5173
+npm run dev                                                 # :5173, proxies /api -> :8000
+
+# tests
+cd backend && PYTHONPATH=. pytest tests/ -q                 # 76 pass
 ```
 
-API docs (auto-generated): http://localhost:8000/docs
+## 13. API
 
-Run tests:
-```bash
-cd backend
-PYTHONPATH=. pytest tests/ -v
-```
+`POST /assess` · `POST /payments` · `GET /decisions` · `GET /decisions/{id}` ·
+`GET /transactions/{id}/network` · `GET /audit/{txn}` ·
+`GET /model/metrics` · `GET /analytics` · `GET /analytics/economics` ·
+`GET /network/graph` · `GET /network/clusters` · `GET /network/entity/{kind}/{ref}` ·
+`GET /policy` · `GET /customers/{id}` · `GET /stats/summary` ·
+`POST /webhooks/razorpay` · `GET /health`
 
-## Risk model
+Auto-generated docs at `/docs`.
 
-```bash
-cd backend
-python ml/generate_training_data.py   # generates a labeled synthetic dataset
-python ml/train.py                     # trains + compares LogReg vs Random Forest, saves the winner
-```
+## 14. Demo
 
-We use a synthetic dataset generated from the same feature logic as the
-simulator (not the Kaggle credit-card dataset) so that every feature is
-human-readable — `amount_ratio_to_typical`, `is_new_device`, etc. — which
-the explainability layer needs to produce a plain-English reason. See
-`docs/ARCHITECTURE.md` for the full reasoning, including the class-overlap
-noise deliberately added to the generator so the classification task isn't
-trivially separable (early versions scored a suspicious, useless 100% —
-fixed by making the feature distributions genuinely overlap between normal
-and risky behaviour, plus a few percent of symmetric label noise).
+Navigation: **Overview → Live Stream → Investigation → Network → Analytics →
+Policy**. Deterministic seeded data (`seed=42`) includes a **coordinated ring**
+— 4 accounts on `DEVICE_RING`, 13 near-identical payments in ~6 minutes → network
+risk lights up → composite 0.92 → **HOLD**. That is the hero case: open a ring
+transaction in Investigation, follow the risk breakdown and network exposure to
+the Network page, see the cluster, return for the explanation and audit trail,
+then Analytics for precision / recall / false-positive cost.
 
-Current comparison (held-out 20%, ~14% positive rate — `ml/model_comparison.csv`):
-
-| model | precision | recall | F1 | PR-AUC | ROC-AUC |
-|---|---|---|---|---|---|
-| Logistic Regression (baseline) | 0.64 | 0.86 | 0.74 | 0.87 | 0.93 |
-| **Random Forest** (selected) | **0.90** | **0.87** | **0.88** | **0.89** | 0.93 |
-
-The Random Forest is picked on PR-AUC. It lifts precision from 0.64 → 0.90
-at the same recall — it captures interactions between amount ratio, device
-change and failure history that the linear model flattens.
-
-## Decision engine & explainability (Day 3)
-
-Every ingested payment now runs through a pipeline before it's stored:
-
-1. **Feature extraction** (`app/engine/feature_extractor.py`) — recomputes the
-   Day 2 model features (`amount_ratio_to_typical`, `is_new_device`,
-   `recent_failed_count`, …) from the customer's *actual* prior events in the
-   database. New customers fall back to neutral values.
-2. **Risk score** — the Day 2 model scores the feature row.
-3. **Failure category** — the Day 2 rule-based classifier.
-4. **Decision** (`app/engine/decision_engine.py`) — a deterministic if/elif
-   policy over the score + category → `APPROVE | RETRY | OFFER_ALTERNATIVE |
-   VERIFY | HOLD`. The ML model recommends; this policy decides.
-5. **Recovery probability** (`app/engine/recovery.py`) — a transparent
-   heuristic (base rate per failure category, adjusted by risk and retry
-   history), not a second model.
-6. **Explanation** (`app/engine/explainer.py`) — one small LLM call turns the
-   structured signals into a 1–2 sentence plain-English reason. It's **off by
-   default** and always has a deterministic template fallback, so the system
-   runs — and tests pass — with no API key. Enable it with
-   `PAYSENTINEL_USE_LLM=1` (see `backend/.env.example`).
-
-New endpoints: `GET /decisions` (paginated, `?decision=HOLD` filter),
-`GET /decisions/{id}` (full Investigation detail), `GET /health` (DB + model
-readiness probe), and `/stats/summary` now reports `high_risk`,
-`revenue_at_risk`, and a decision breakdown. `GET /payments` and
-`GET /decisions` take `limit` (1–500) + `offset`.
-
-Insight endpoints: `GET /policy` (the decision rules, thresholds, model feature
-importances, recovery base rates — everything the "Policy" page shows) and
-`GET /customers/{id}` (a customer's **aggregate** risk signals — success rate,
-decision mix, and the behavioural baseline the model compares against;
-deliberately not an itemised transaction log).
-
-### Integration surface — using PaySentinel *before* a payment moves
-
-Everything above scores a payment that already happened. Two endpoints let a
-real payment flow ask *"is this attempt safe?"* up front:
-
-- **`POST /assess`** — a checkout page, a PSP, or any payment flow posts the
-  attempt (`customer_id`, `amount`, `payment_method`, optional device/bank) and
-  gets back `{ decision, safe, risk_score, explanation, signals }` synchronously.
-  `APPROVE` → let it through, `VERIFY` → step-up challenge, `HOLD` → block. The
-  attempt is stored as `PENDING` so it also appears in the dashboard.
-
-  ```bash
-  curl -X POST https://<api>/assess -H 'content-type: application/json' \
-    -d '{"customer_id":"CUST_42","amount":95000,"payment_method":"CARD","device_id":"NEW_DEVICE"}'
-  # -> {"decision":"HOLD","safe":false,"risk_score":1.0,"explanation":"Held for manual review: …"}
-  ```
-
-  Optional `X-API-Key` gate: set `PAYSENTINEL_API_KEY`.
-
-- **`POST /webhooks/razorpay`** — point a Razorpay (test-mode) webhook here and
-  every `payment.captured` / `payment.failed` event is mapped and scored by the
-  same pipeline (amount de-paise'd, method/error mapped, idempotent on retry).
-  Verifies `X-Razorpay-Signature` when `PAYSENTINEL_RAZORPAY_WEBHOOK_SECRET` is set.
-
-You can't hook into Google Pay / PhonePe internals (closed systems) — but this
-is exactly how a PSP or merchant would consume a risk engine.
-
-**Real-mode testing:** `frontend/public/checkout.html` is a working Razorpay
-(test-mode) checkout — pay with a test card and Razorpay fires a real webhook
-that PaySentinel scores. `POST /razorpay/order` creates the order; set
-`RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`. Full loop: [`docs/RAZORPAY_TESTING.md`](docs/RAZORPAY_TESTING.md).
-
-### Operational scripts
-
-```bash
-cd backend
-python scripts/backfill_decisions.py            # score events that have no decision yet
-python scripts/backfill_decisions.py --rescore  # wipe + re-score everything (after engine changes)
-python scripts/loadtest_pipeline.py --count 1000 # pipeline latency / throughput check
-```
-
-Measured pipeline throughput is ~10 events/s (≈85 ms/event, dominated by the
-single-row Random Forest prediction) — far above the simulator's rate; batch
-scoring or a smaller forest is the lever if real-time volume ever matters.
-
-## Dashboard (Day 4)
-
-`frontend/` — Vite + React, no UI framework (a hand-built design system, so it
-reads as designed rather than generated). Light/dark themes (warm-dark, follows
-the OS setting until toggled; choice persists). Pages, all polling the API:
-
-- **Overview** (`/`) — stat tiles (payments, success rate, failed, flagged,
-  revenue at risk), a "decisions by action" breakdown, a throughput sparkline,
-  and recent activity. Polls every 5s.
-- **Live Stream** (`/stream`) — the decision feed, newest first, new rows animate
-  in; filter pills per action; each row → Investigation. Polls every 3s.
-- **Live Check** (`/check`) — a form that calls `POST /assess` and shows the
-  pre-payment verdict live (decision, safe flag, risk meter, explanation).
-- **Investigation** (`/investigation/:id`) — the pitch screen: the verdict and
-  recommended action, risk-score meter, the **AI explanation** (with an
-  LLM/template badge), the triggered signals, the feature snapshot the engine
-  scored, and the full payment + decision record. `/investigation` alone lists
-  what needs attention (HOLD / VERIFY). The customer id links to →
-- **Customer** (`/customers/:id`) — that customer's **aggregate** risk profile:
-  success rate, decision mix, and the behavioural baseline the model compares
-  against. No itemised transaction history — a risk view, not a ledger.
-- **Policy** (`/policy`) — the decision rules as a numbered flow, the model's
-  feature importances, and the recovery base rates. This is the "AI recommends,
-  a deterministic policy decides" story, made concrete.
-
-Config: dev proxies `/api` → `localhost:8000` (see `vite.config.js`); for a
-Vercel deploy set `VITE_API_BASE_URL` to the backend origin (`frontend/.env.example`,
-`frontend/vercel.json`).
-
-## Deploy
-
-Backend → **Render** (`backend/render.yaml` blueprint), frontend → **Vercel**
-(`frontend/vercel.json`). Render's filesystem is ephemeral, so the backend
-re-seeds its SQLite DB on each boot (`app/seed.py`, ~140 scored events;
-`PAYSENTINEL_SEED_ON_START=0` to disable). Full step-by-step: [`DEPLOY.md`](DEPLOY.md).
-
-During a demo you can point the simulator at the deployed API to add live
-traffic: `python simulator/simulate_payments.py --api https://<your-api>`.
-
-## Project structure
-
-```
-paysentinel/
-├── DEPLOY.md                 # step-by-step deploy runbook
-├── backend/
-│   ├── app/
-│   │   ├── main.py          # FastAPI app, routes, lifespan (schema + seed)
-│   │   ├── seed.py          # first-boot data seeding (ephemeral hosts)
-│   │   ├── models/          # ORM models + Pydantic schemas
-│   │   ├── engine/          # feature extraction / risk / decision / recovery / explainer
-│   │   └── db/               # database setup (SQLite for the MVP)
-│   ├── ml/                   # model + anomaly training scripts
-│   ├── simulator/            # payment event simulator
-│   ├── scripts/              # backfill + load-test utilities
-│   ├── tests/
-│   ├── render.yaml           # Render blueprint
-│   └── Procfile              # Railway / Heroku-style start
-└── frontend/
-    ├── src/
-    │   ├── pages/            # Overview, LiveStream, Investigation(+Index)
-    │   ├── components/       # AppShell, StatusChip, RiskMeter, Sparkline, …
-    │   ├── hooks/            # usePolling
-    │   ├── lib/              # formatting + decision metadata
-    │   └── styles/           # design tokens + global css
-    └── vercel.json
-```
-
-## Why these choices
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full reasoning —
-short version: FastAPI + SQLite for a zero-friction build under time
-pressure, a deterministic policy layer sitting on top of the ML risk score
-(so a probabilistic model never makes an uncontrolled financial decision),
-and a single deliberate LLM touchpoint for generating human-readable
-explanations rather than a full chatbot.
-
-This project shares its core engine with **FinSentinel**, a financial-crime
-and transaction-network intelligence extension built afterward for a
-separate application. Full extension plan: [`docs/FINSENTINEL_EXTENSION.md`](docs/FINSENTINEL_EXTENSION.md)
+Full architecture rationale: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Deploy runbook: [`DEPLOY.md`](DEPLOY.md).
