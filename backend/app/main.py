@@ -154,7 +154,22 @@ def assess(req: AssessRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail=f"transaction_id '{txn}' was already assessed")
     db.refresh(event)
 
-    d = process_event(db, event)
+    # Unlike /payments (fire-and-forget ingestion, where a scoring failure is
+    # logged and swallowed so the event isn't lost), /assess must hand the
+    # caller a real decision — there's nothing useful to return if scoring
+    # blows up. Fail cleanly: remove the orphaned event so a retry with the
+    # same transaction_id isn't blocked by a decision-less row, and surface
+    # a real 500 instead of letting an unrelated exception leak out raw.
+    try:
+        d = process_event(db, event)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[assess] risk engine failed for {txn}: {exc}")
+        db.delete(event)
+        db.commit()
+        raise HTTPException(
+            status_code=500,
+            detail="The risk engine could not score this transaction. Nothing was recorded — safe to retry.",
+        )
     net = json.loads(d.network_json) if d.network_json else {}
     return AssessResponse(
         transaction_id=txn,
@@ -203,7 +218,17 @@ async def razorpay_webhook(
     db.add(event)
     db.commit()
     db.refresh(event)
-    decision = process_event(db, event)
+    try:
+        decision = process_event(db, event)
+    except Exception as exc:  # noqa: BLE001
+        # Delete rather than leave a decision-less row: the "already
+        # processed" short-circuit above would otherwise permanently mark
+        # this transaction as handled, so Razorpay's webhook retry could
+        # never get it scored. A 500 here tells Razorpay to redeliver.
+        print(f"[webhook] risk engine failed for {event.transaction_id}: {exc}")
+        db.delete(event)
+        db.commit()
+        raise HTTPException(status_code=500, detail="scoring failed; not recorded, safe to redeliver")
     return {
         "received": True,
         "scored": True,
@@ -278,6 +303,9 @@ def simulate_scenario(body: dict, db: Session = Depends(get_db)):
         return scenarios.run(db, name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[scenario] '{name}' failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"scenario '{name}' failed to run — check server logs")
 
 
 @app.get("/payments", response_model=List[PaymentEventOut])

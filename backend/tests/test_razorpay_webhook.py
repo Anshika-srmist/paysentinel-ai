@@ -79,6 +79,25 @@ def test_webhook_is_idempotent_on_retry():
     assert again["scored"] is False and "already" in again["reason"]
 
 
+def test_scoring_failure_returns_500_and_can_be_redelivered(monkeypatch):
+    """A crash inside the risk engine must not get the event silently marked
+    'already processed' — that would make a real webhook retry from Razorpay
+    permanently a no-op for this transaction. It must fail loudly (500, so
+    Razorpay's own retry logic kicks in) and remove the orphaned row so the
+    exact same payload scores cleanly on redelivery."""
+    def _boom(db, event):
+        raise RuntimeError("synthetic failure for test")
+
+    monkeypatch.setattr("app.main.process_event", _boom)
+    body = _captured()
+    txn = body["payload"]["payment"]["entity"]["id"]
+    assert client.post("/webhooks/razorpay", json=body).status_code == 500
+
+    monkeypatch.undo()  # restore the real process_event
+    redelivered = client.post("/webhooks/razorpay", json=body).json()
+    assert redelivered["scored"] is True  # not stuck behind a stale "already processed"
+
+
 def test_razorpay_config_reports_disabled_without_keys(monkeypatch):
     monkeypatch.setattr("app.main._RZP_KEY_ID", "")
     monkeypatch.setattr("app.main._RZP_KEY_SECRET", "")

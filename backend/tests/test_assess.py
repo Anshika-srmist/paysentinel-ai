@@ -79,6 +79,22 @@ def test_garbage_input_is_rejected_not_silently_accepted():
     assert _assess(customer_id="cust; drop table").status_code == 422    # bad characters
 
 
+def test_scoring_failure_is_reported_and_leaves_no_orphaned_event(monkeypatch):
+    """If the risk engine itself blows up, /assess must not eat the error or
+    leave a decision-less PaymentEvent behind (which would permanently block
+    a retry under the same transaction_id via the duplicate-id 409 check)."""
+    def _boom(db, event):
+        raise RuntimeError("synthetic failure for test")
+
+    monkeypatch.setattr("app.main.process_event", _boom)
+    txn = f"TXN_BOOM_{uuid.uuid4().hex[:8].upper()}"
+    r = _assess(transaction_id=txn)
+    assert r.status_code == 500
+
+    payments = client.get("/payments", params={"limit": 200}).json()
+    assert not any(p["transaction_id"] == txn for p in payments)  # no orphan left behind
+
+
 def test_api_key_gate(monkeypatch):
     monkeypatch.setattr("app.main._API_KEY", "s3cret")
     assert _assess().status_code == 401
