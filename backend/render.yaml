@@ -1,7 +1,11 @@
 # Render Blueprint — https://render.com/docs/blueprint-spec
-# In Render: New + -> Blueprint -> pick this repo. It reads this file and
-# provisions the service. Free plan; the filesystem is ephemeral, so the
-# app re-seeds its SQLite DB on each boot (see app/seed.py).
+# In Render: New + -> Blueprint -> pick this repo.
+#
+# Persistence: the database is external Postgres (Neon), pointed at via the
+# DATABASE_URL env var, which is set manually in the Render dashboard (it is
+# a credential, so it is not committed here — sync: false). On boot the app
+# runs `alembic upgrade head`, then seeds demo traffic only if the database
+# is empty. Render's own filesystem stays ephemeral; nothing depends on it.
 
 services:
   - type: web
@@ -17,11 +21,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.12"
+      - key: DATABASE_URL
+        sync: false           # set in the dashboard to the Neon connection string
       - key: PAYSENTINEL_SEED_ON_START
-        value: "1"
+        value: "1"            # no-op once the database has rows; set "0" to freeze data
       - key: PAYSENTINEL_SEED_COUNT
         value: "140"
       - key: PAYSENTINEL_USE_LLM
-        value: "0"          # set to "1" and add ANTHROPIC_API_KEY to use real LLM explanations
+        value: "0"            # set to "1" and add ANTHROPIC_API_KEY to use real LLM explanations
       # - key: PAYSENTINEL_CORS_ORIGINS
       #   value: https://your-frontend.vercel.app

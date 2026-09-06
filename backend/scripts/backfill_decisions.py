@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.db.database import Base, SessionLocal, engine, run_light_migrations
+from app.db.database import SessionLocal
 from app.engine.pipeline import process_event
 from app.models.orm_models import PaymentEvent, RiskDecision
 
@@ -29,9 +29,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0, help="cap the number of events processed (0 = all)")
     args = parser.parse_args()
 
-    Base.metadata.create_all(bind=engine)
-    run_light_migrations()
-
+    # Schema is managed by Alembic — run `alembic upgrade head` first if the
+    # database is new.
     db = SessionLocal()
     try:
         if args.rescore:

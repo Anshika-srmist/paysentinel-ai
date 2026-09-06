@@ -13,7 +13,10 @@ from app.db.database import Base
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    # Naive UTC. The timestamp columns are naive DateTime; returning a
+    # tz-aware value here is silently truncated by Postgres and inconsistent
+    # with the rest of the code (scenarios.py already strips tzinfo by hand).
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class PaymentEvent(Base):
@@ -45,8 +48,7 @@ class RiskDecision(Base):
     explanation = Column(Text, nullable=True)               # LLM- or template-generated plain-English reason
 
     # Day 3 additions — recorded so the Investigation page can show exactly
-    # what the engine saw. All nullable / additive; run_light_migrations()
-    # backfills them onto a database created on Day 1/2.
+    # what the engine saw. All nullable / additive.
     explanation_source = Column(String(20), nullable=True)  # llm | structured
     recommended_action = Column(String(120), nullable=True)
     model_name = Column(String(50), nullable=True)          # which risk model scored this

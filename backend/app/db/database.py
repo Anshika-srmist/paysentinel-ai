@@ -1,19 +1,52 @@
 """
 Database setup for PaySentinel AI.
 
-Using SQLite for the buildathon MVP — zero setup, no server to manage under
-time pressure. Swapping to PostgreSQL later (for the FinSentinel extension)
-is a one-line change: just replace DATABASE_URL below. The schema itself
-was designed to migrate cleanly — no SQLite-specific quirks are relied on.
+The engine is driven by the ``DATABASE_URL`` environment variable:
+
+* **unset**  -> ``sqlite:///./paysentinel.db`` — the zero-setup default for
+  local development and the test suite (tests actually use their own
+  in-memory SQLite, see ``tests/conftest.py``).
+* **set**    -> whatever you point it at. Every deployed environment sets
+  this to a Postgres URL.
+
+Schema is owned by Alembic (``migrations/``), not this module — run
+``alembic upgrade head`` to create or migrate it. Nothing here issues DDL.
 """
-from sqlalchemy import create_engine, inspect, text
+import os
+
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = "sqlite:///./paysentinel.db"
+_DEFAULT_SQLITE_URL = "sqlite:///./paysentinel.db"
 
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
+
+def _normalise_url(raw: str) -> str:
+    """
+    Managed Postgres providers (Render, Heroku, some Neon copy-paste strings)
+    hand out ``postgres://``; SQLAlchemy 2.x needs an explicit driver. Pin it
+    to psycopg 3.
+    """
+    if raw.startswith("postgres://"):
+        raw = "postgresql+psycopg://" + raw[len("postgres://"):]
+    elif raw.startswith("postgresql://"):
+        raw = "postgresql+psycopg://" + raw[len("postgresql://"):]
+    return raw
+
+
+DATABASE_URL = _normalise_url(os.getenv("DATABASE_URL", "").strip() or _DEFAULT_SQLITE_URL)
+_IS_SQLITE = DATABASE_URL.startswith("sqlite")
+
+if _IS_SQLITE:
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,      # drop connections killed by the DB / a proxy
+        pool_size=5,
+        max_overflow=10,
+        pool_recycle=1800,
+    )
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -24,44 +57,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-
-# Columns added after a table's first release. SQLite can't add these via
-# create_all() once the table exists, so we add them by hand on startup.
-_ADDED_COLUMNS = {
-    "risk_decisions": {
-        "explanation_source": "VARCHAR(20)",
-        "recommended_action": "VARCHAR(120)",
-        "model_name": "VARCHAR(50)",
-        "features_json": "TEXT",
-        "signals_json": "TEXT",
-        "ml_risk": "NUMERIC(5, 4)",
-        "behavioral_risk": "NUMERIC(5, 4)",
-        "network_risk": "NUMERIC(5, 4)",
-        "rule_severity": "VARCHAR(10)",
-        "behavioral_json": "TEXT",
-        "network_json": "TEXT",
-        "audit_json": "TEXT",
-        "explanation_json": "TEXT",
-    },
-}
-
-
-def run_light_migrations() -> None:
-    """
-    Dev-only, additive-only schema patch: bring a database created on an
-    earlier day up to the current column set without a migration tool.
-    Safe to call on every startup; a no-op once the columns exist.
-    """
-    inspector = inspect(engine)
-    tables = set(inspector.get_table_names())
-    for table, columns in _ADDED_COLUMNS.items():
-        if table not in tables:
-            continue  # create_all() will build it complete
-        existing = {col["name"] for col in inspector.get_columns(table)}
-        missing = {name: ddl for name, ddl in columns.items() if name not in existing}
-        if not missing:
-            continue
-        with engine.begin() as conn:
-            for name, ddl in missing.items():
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))

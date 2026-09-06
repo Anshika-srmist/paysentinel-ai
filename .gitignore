@@ -11,10 +11,15 @@ venv/
 .venv/
 env/
 
-# Local database (created at runtime by the API)
+# Local database (created at runtime by the API / Alembic)
 backend/paysentinel.db
+backend/*.db
 *.sqlite
 *.sqlite3
+
+# Local ML experiments (not part of the shipped model)
+backend/ml/compare_models.py
+backend/ml/model_comparison_extended.csv
 
 # Secrets / local config
 .env

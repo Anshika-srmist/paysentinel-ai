@@ -18,7 +18,7 @@ from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.database import Base, SessionLocal, engine, get_db, run_light_migrations
+from app.db.database import SessionLocal, get_db
 from app.engine import network, scenarios
 from app.engine.feature_extractor import customer_baseline
 from app.engine.pipeline import process_event
@@ -49,14 +49,28 @@ def require_api_key(x_api_key: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="invalid or missing X-API-Key")
 
 
+def _migrate_to_head() -> None:
+    """
+    Bring the database up to the latest Alembic revision at startup.
+
+    Fine for a single web instance (Alembic takes a transactional lock, so a
+    re-run is a no-op). If this service is ever scaled to multiple instances,
+    move this to a one-off release/pre-deploy command instead of per-boot.
+    Tests don't hit this path — they build their schema in conftest.py.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    backend_dir = os.path.dirname(os.path.dirname(__file__))  # backend/  (this file is backend/app/main.py)
+    cfg = Config(os.path.join(backend_dir, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(backend_dir, "migrations"))
+    command.upgrade(cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Create/patch the schema at startup rather than import time, so simply
-    # importing this module (e.g. in tests, which use their own database)
-    # never touches the real SQLite file.
-    Base.metadata.create_all(bind=engine)
-    run_light_migrations()
-    # On a fresh deploy (ephemeral filesystem) give the dashboard data to show.
+    _migrate_to_head()
+    # On a fresh database, give the dashboard something to show.
     with SessionLocal() as db:
         seed_if_empty(db)
     yield
