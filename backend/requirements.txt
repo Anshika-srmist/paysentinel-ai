@@ -17,6 +17,13 @@ pydantic==2.12.4
 alembic==1.19.2
 psycopg[binary]==3.3.5
 
+# --- Request-path performance (in-process; single instance) ---
+# slowapi: per-IP rate limiting on the write endpoints (in-memory store).
+# cachetools: short-TTL cache for the recompute-heavy read endpoints.
+# Both need a shared backend (Redis) only if this is ever multi-instance.
+slowapi==0.1.10
+cachetools==6.2.1
+
 # --- Simulator / tests ---
 requests==2.32.5
 pytest==8.3.3

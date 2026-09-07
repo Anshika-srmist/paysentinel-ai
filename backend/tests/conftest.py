@@ -16,6 +16,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.cache import cache_clear, limiter
 from app.db.database import Base, get_db
 from app.main import app
 
@@ -44,6 +45,8 @@ def _isolated_db(_engine):
         finally:
             db.close()
 
+    cache_clear()    # the 15s response cache must not leak state between tests
+    limiter.reset()  # nor the in-memory rate-limit counters
     app.dependency_overrides[get_db] = _override_get_db
     yield
     app.dependency_overrides.pop(get_db, None)

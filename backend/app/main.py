@@ -14,10 +14,13 @@ from typing import List
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
 from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.cache import cached, limiter
 from app.db.database import SessionLocal, get_db
 from app.engine import network, scenarios
 from app.engine.feature_extractor import customer_baseline
@@ -77,6 +80,11 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="PaySentinel AI", version="0.4.0", lifespan=lifespan)
+
+# Rate limiting (in-process, per client IP — see app/cache.py). Individual
+# routes opt in with @limiter.limit(...); there is no global default.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS: "*" by default (fine for a public read-only demo); set
 # PAYSENTINEL_CORS_ORIGINS to a comma-separated allowlist for production.
@@ -138,7 +146,8 @@ def ingest_payment(event: PaymentEventIn, db: Session = Depends(get_db)):
 
 
 @app.post("/assess", response_model=AssessResponse, dependencies=[Depends(require_api_key)])
-def assess(req: AssessRequest, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def assess(request: Request, req: AssessRequest, db: Session = Depends(get_db)):
     """
     Score a payment that has *not happened yet* and return an action.
 
@@ -205,6 +214,7 @@ def assess(req: AssessRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/webhooks/razorpay")
+@limiter.limit("120/minute")
 async def razorpay_webhook(
     request: Request,
     db: Session = Depends(get_db),
@@ -311,7 +321,8 @@ def list_scenarios():
 
 
 @app.post("/simulate/scenario")
-def simulate_scenario(body: dict, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def simulate_scenario(request: Request, body: dict, db: Session = Depends(get_db)):
     name = body.get("name")
     try:
         return scenarios.run(db, name)
@@ -426,6 +437,10 @@ def transaction_network(transaction_id: str, db: Session = Depends(get_db)):
 
 @app.get("/stats/summary", response_model=StatsSummary)
 def stats_summary(db: Session = Depends(get_db)):
+    return cached("stats_summary", lambda: _stats_summary(db))
+
+
+def _stats_summary(db: Session) -> StatsSummary:
     total = db.query(func.count(PaymentEvent.id)).scalar() or 0
     successful = (
         db.query(func.count(PaymentEvent.id))
@@ -514,6 +529,10 @@ def model_metrics():
 
 @app.get("/analytics")
 def analytics(db: Session = Depends(get_db)):
+    return cached("analytics", lambda: _analytics(db))
+
+
+def _analytics(db: Session):
     """Risk distribution, decision mix, top signals, failure categories."""
     rows = (
         db.query(RiskDecision, PaymentEvent)
@@ -552,6 +571,11 @@ def analytics_economics(
     avg_fraud_loss: float = Query(38000.0, ge=0, description="Simulation assumption: avg ₹ lost per undetected fraud"),
     avg_false_decline_cost: float = Query(520.0, ge=0, description="Simulation assumption: avg ₹ cost of a wrong decline"),
 ):
+    key = f"economics:{avg_fraud_loss}:{avg_false_decline_cost}"
+    return cached(key, lambda: _analytics_economics(avg_fraud_loss, avg_false_decline_cost))
+
+
+def _analytics_economics(avg_fraud_loss: float, avg_false_decline_cost: float):
     """
     Decision economics from the held-out confusion matrix. All figures are
     SIMULATED — labelled assumptions, not Razorpay data.
@@ -594,11 +618,15 @@ def analytics_economics(
 
 @app.get("/network/graph")
 def network_graph(db: Session = Depends(get_db)):
-    return network.graph_snapshot(db)
+    return cached("network_graph", lambda: network.graph_snapshot(db))
 
 
 @app.get("/network/clusters")
 def network_clusters(db: Session = Depends(get_db)):
+    return cached("network_clusters", lambda: _network_clusters(db))
+
+
+def _network_clusters(db: Session):
     cl = network.clusters(db)
     high = [c for c in cl if c["network_risk"] >= 0.5]
     connected_accounts = sorted({m for c in cl for m in c["members"]})
