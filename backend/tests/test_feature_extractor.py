@@ -112,10 +112,8 @@ def test_established_customer_with_mostly_successes_has_good_history(db):
     assert f.customer_history_good is True
 
 
-def test_model_input_has_exactly_the_trained_features(db):
+def test_model_input_matches_the_trained_feature_list(db):
+    from app.engine.features_common import FEATURE_NAMES
+
     event = _add(db, n=1)
-    keys = set(extract_features(db, event).as_model_input().keys())
-    assert keys == {
-        "amount", "amount_ratio_to_typical", "is_new_device",
-        "is_new_payment_method", "is_unusual_hour", "recent_failed_count",
-    }
+    assert list(extract_features(db, event).as_model_input().keys()) == FEATURE_NAMES

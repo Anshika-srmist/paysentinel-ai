@@ -275,6 +275,10 @@ export function Investigation() {
             <div className="card-pad">
               <div className="feat">
                 <FeatCell k="Amount vs typical" v={`${(f.amount_ratio_to_typical ?? 1).toFixed(2)}×`} flag={(f.amount_ratio_to_typical ?? 0) >= 3} />
+                <FeatCell k="Amount z-score" v={(f.amount_zscore ?? 0).toFixed(1)} flag={(f.amount_zscore ?? 0) >= 3} />
+                <FeatCell k="Txns last hour" v={num(f.velocity_1h ?? 0)} flag={(f.velocity_1h ?? 0) >= 4} />
+                <FeatCell k="Txns last 24h" v={num(f.velocity_24h ?? 0)} flag={(f.velocity_24h ?? 0) >= 10} />
+                <FeatCell k="Others on device" v={num(f.device_shared_count ?? 0)} flag={(f.device_shared_count ?? 0) >= 2} />
                 <FeatCell k="Recent failed attempts" v={num(f.recent_failed_count ?? 0)} flag={(f.recent_failed_count ?? 0) >= 2} />
                 <FeatCell k="New device" v={f.is_new_device ? 'Yes' : 'No'} flag={f.is_new_device} />
                 <FeatCell k="New payment method" v={f.is_new_payment_method ? 'Yes' : 'No'} flag={f.is_new_payment_method} />

@@ -20,23 +20,22 @@ def _load():
     return _bundle
 
 
-def score_transaction(amount: float, amount_ratio_to_typical: float, is_new_device: bool,
-                       is_new_payment_method: bool, is_unusual_hour: bool,
-                       recent_failed_count: int) -> float:
-    """Returns a fraud/risk probability in [0, 1]."""
+def score_transaction(features: dict) -> float:
+    """Calibrated fraud/risk probability in [0, 1].
+
+    `features` is the full feature dict from
+    `feature_extractor.Features.as_model_input()`; only the columns the
+    model was trained on (bundle['features']) are used, in that order.
+    """
     bundle = _load()
     model = bundle["model"]
-    features = bundle["features"]
+    cols = bundle["features"]
 
-    row = {
-        "amount": amount,
-        "amount_ratio_to_typical": amount_ratio_to_typical,
-        "is_new_device": int(is_new_device),
-        "is_new_payment_method": int(is_new_payment_method),
-        "is_unusual_hour": int(is_unusual_hour),
-        "recent_failed_count": recent_failed_count,
-    }
-    row_df = pd.DataFrame([row])[features]
+    missing = [c for c in cols if c not in features]
+    if missing:
+        raise KeyError(f"score_transaction missing feature(s): {missing}")
+
+    row_df = pd.DataFrame([{c: features[c] for c in cols}])[cols]
     proba = model.predict_proba(row_df)[0][1]
     return round(float(proba), 4)
 

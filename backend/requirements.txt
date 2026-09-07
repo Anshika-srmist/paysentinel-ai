@@ -34,10 +34,14 @@ requests==2.32.5
 pytest==8.3.3
 httpx==0.28.1
 
-# --- ML (risk model, Day 2) ---
+# --- ML (risk model) ---
+# scikit-learn serves the model; xgboost / lightgbm are candidates in the
+# training bake-off (ml/train.py) and one of them may be the shipped model.
 pandas==3.0.5
 scikit-learn==1.9.0
 joblib==1.6.0
+xgboost==3.4.1
+lightgbm==4.7.0
 
 # --- Network risk engine (graph detectors — no GNN) ---
 networkx==3.4.2

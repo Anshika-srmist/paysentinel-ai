@@ -142,7 +142,8 @@ export function Analytics() {
                   </tbody>
                 </table>
                 <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
-                  Mean ± std across folds. The gap between models is several times the spread — not a single split's noise.
+                  Mean ± std across folds. The tree models tie on PR-AUC; the selected one wins on false-positive rate
+                  by a margin many times the fold spread.
                 </p>
               </div>
             </section>

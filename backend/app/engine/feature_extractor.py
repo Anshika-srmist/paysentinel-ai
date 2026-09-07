@@ -14,12 +14,14 @@ this customer" features can't be judged, so they fall back to neutral
 values (ratio 1.0, nothing flagged as new). That is a deliberate
 cold-start choice, not an oversight.
 """
+import math
 from dataclasses import dataclass, field
 from typing import List
 
-from sqlalchemy import select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session
 
+from app.engine.features_common import FEATURE_NAMES, assemble
 from app.models.orm_models import PaymentEvent
 
 # How many of the customer's most recent prior events we look at when
@@ -41,6 +43,7 @@ _GOOD_SUCCESS_RATIO = 0.7
 class Features:
     """The model input plus the human-readable signals derived alongside it."""
 
+    model_row: dict                       # the FEATURE_NAMES vector the model scores
     amount: float
     amount_ratio_to_typical: float
     is_new_device: bool
@@ -49,45 +52,71 @@ class Features:
     recent_failed_count: int
     customer_history_good: bool
     prior_event_count: int
+    velocity_1h: int = 0
+    velocity_24h: int = 0
+    device_shared_count: int = 0
     typical_amount: float | None = None
     is_new_merchant: bool = False
     signals: List[str] = field(default_factory=list)
 
     def as_model_input(self) -> dict:
-        """Exactly the keyword arguments `risk_model.score_transaction` expects."""
-        return {
-            "amount": self.amount,
-            "amount_ratio_to_typical": self.amount_ratio_to_typical,
-            "is_new_device": self.is_new_device,
-            "is_new_payment_method": self.is_new_payment_method,
-            "is_unusual_hour": self.is_unusual_hour,
-            "recent_failed_count": self.recent_failed_count,
-        }
+        """The feature dict `risk_model.score_transaction` expects."""
+        return self.model_row
 
     def as_dict(self) -> dict:
         """Full feature snapshot, persisted with the decision for the Investigation page."""
         return {
-            "amount": self.amount,
-            "amount_ratio_to_typical": self.amount_ratio_to_typical,
-            "is_new_device": self.is_new_device,
-            "is_new_payment_method": self.is_new_payment_method,
-            "is_unusual_hour": self.is_unusual_hour,
-            "recent_failed_count": self.recent_failed_count,
+            **self.model_row,
             "customer_history_good": self.customer_history_good,
             "prior_event_count": self.prior_event_count,
         }
 
 
-def _prior_events(db: Session, event: PaymentEvent) -> List[PaymentEvent]:
+# Wider than the "usual device/method" window: velocity_24h needs to see a
+# full day of a busy customer's activity.
+_VELOCITY_WINDOW = 80
+
+
+def _prior_events(db: Session, event: PaymentEvent, limit: int = _HISTORY_WINDOW) -> List[PaymentEvent]:
     """The customer's events that happened before this one, newest first."""
     stmt = (
         select(PaymentEvent)
         .where(PaymentEvent.customer_id == event.customer_id)
         .where(PaymentEvent.id < event.id)
         .order_by(PaymentEvent.id.desc())
-        .limit(_HISTORY_WINDOW)
+        .limit(limit)
     )
     return list(db.execute(stmt).scalars().all())
+
+
+def _amount_stats(prior: List[PaymentEvent]) -> tuple[float | None, float | None]:
+    """(mean, std) of prior successful amounts — the z-score baseline."""
+    pool = [float(e.amount) for e in prior if e.status == "SUCCESS"] or [float(e.amount) for e in prior]
+    if not pool:
+        return None, None
+    mean = sum(pool) / len(pool)
+    std = math.sqrt(sum((a - mean) ** 2 for a in pool) / len(pool)) if len(pool) > 1 else None
+    return mean, std
+
+
+def _fail_ratio(prior: List[PaymentEvent], window: int = 10) -> float:
+    recent = prior[:window]
+    if not recent:
+        return 0.0
+    return sum(1 for e in recent if e.status == "FAILED") / len(recent)
+
+
+def _device_shared_count(db: Session, event: PaymentEvent) -> int:
+    """Distinct *other* customers who have transacted from this device."""
+    if not event.device_id:
+        return 0
+    return int(
+        db.query(func.count(distinct(PaymentEvent.customer_id)))
+        .filter(PaymentEvent.device_id == event.device_id)
+        .filter(PaymentEvent.customer_id != event.customer_id)
+        .scalar()
+        or 0
+    )
 
 
 def _typical_amount(prior: List[PaymentEvent]) -> float | None:
@@ -123,10 +152,11 @@ def extract_features(db: Session, event: PaymentEvent) -> Features:
     single payment event, using the customer's prior events for context.
     The event must already be persisted so it has an `id`.
     """
-    prior = _prior_events(db, event)
+    prior = _prior_events(db, event, limit=_VELOCITY_WINDOW)
     amount = float(event.amount)
 
-    typical = _typical_amount(prior)
+    mean, std = _amount_stats(prior)
+    typical = mean
     ratio = round(amount / typical, 3) if typical else 1.0
 
     prior_devices = {e.device_id for e in prior if e.device_id}
@@ -138,19 +168,36 @@ def extract_features(db: Session, event: PaymentEvent) -> Features:
     is_new_merchant = bool(prior) and event.merchant_id is not None and event.merchant_id not in prior_merchants
 
     hour = event.event_time.hour
-    is_unusual_hour = not (6 <= hour <= 23)
-
     recent_failed_count = _recent_failed_streak(prior)
 
+    now = event.event_time
+    velocity_1h = sum(1 for e in prior if 0 <= (now - e.event_time).total_seconds() <= 3600)
+    velocity_24h = sum(1 for e in prior if 0 <= (now - e.event_time).total_seconds() <= 86400)
+    secs_since_last = (now - prior[0].event_time).total_seconds() if prior else None
+    device_shared = _device_shared_count(db, event)
+
+    model_row = assemble(
+        amount=amount, typical_amount=typical, amount_mean=mean, amount_std=std,
+        is_new_device=is_new_device, is_new_payment_method=is_new_method,
+        event_hour=hour, recent_failed_count=recent_failed_count,
+        customer_fail_ratio=_fail_ratio(prior),
+        velocity_1h=velocity_1h, velocity_24h=velocity_24h,
+        secs_since_last=secs_since_last, device_shared_count=device_shared,
+    )
+
     features = Features(
+        model_row=model_row,
         amount=amount,
         amount_ratio_to_typical=ratio,
         is_new_device=is_new_device,
         is_new_payment_method=is_new_method,
-        is_unusual_hour=is_unusual_hour,
+        is_unusual_hour=model_row["is_unusual_hour"] == 1,
         recent_failed_count=recent_failed_count,
         customer_history_good=_history_is_good(prior),
         prior_event_count=len(prior),
+        velocity_1h=velocity_1h,
+        velocity_24h=velocity_24h,
+        device_shared_count=device_shared,
         typical_amount=round(typical, 2) if typical else None,
         is_new_merchant=is_new_merchant,
     )
@@ -205,4 +252,8 @@ def _build_signals(f: Features) -> List[str]:
         )
     if f.is_unusual_hour:
         signals.append("Occurred at an unusual hour (outside 06:00-23:00)")
+    if f.velocity_1h >= 4:
+        signals.append(f"{f.velocity_1h} transactions from this customer in the last hour")
+    if f.device_shared_count >= 2:
+        signals.append(f"Device is shared with {f.device_shared_count} other customer(s)")
     return signals

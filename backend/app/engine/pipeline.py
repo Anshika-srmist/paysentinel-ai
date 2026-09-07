@@ -36,7 +36,8 @@ def _audit(event: PaymentEvent, ml: float, beh: float, net: float, severity: str
     step = lambda offset, s, d: {"ts": (t.replace(microsecond=0)).isoformat() + f".{offset:03d}", "step": s, "detail": d}
     trail = [
         step(1, "Payment received", f"{event.transaction_id} · ₹{float(event.amount):,.2f} · {event.payment_method}"),
-        step(2, "Features generated", f"amount ratio, device/method novelty, failure streak, hour"),
+        step(2, "Features generated", "14 features: amount context, velocity (1h/24h), recency, "
+             "failure ratio, device sharing, device/method novelty, hour"),
         step(3, "Transaction model scored", f"ML risk {ml:.2f} ({model_name()})"),
         step(4, "Behavioural analysis", f"behavioural risk {beh:.2f}"),
         step(5, "Network analysis", f"network risk {net:.2f}"),
@@ -52,7 +53,7 @@ def _audit(event: PaymentEvent, ml: float, beh: float, net: float, severity: str
 def process_event(db: Session, event: PaymentEvent) -> RiskDecision:
     features = extract_features(db, event)
 
-    ml_risk = score_transaction(**features.as_model_input())
+    ml_risk = score_transaction(features.as_model_input())
     beh = behavioral.analyse(db, event, features)
     net = network.analyze_transaction(db, event)
 

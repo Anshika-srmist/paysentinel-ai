@@ -67,37 +67,49 @@ GNN — explainable detectors). Deploy: Vercel + Render.
 
 ## 3. ML approach — real held-out evaluation
 
-`ml/train.py` selects the model by **5-fold stratified cross-validation on
-PR-AUC** (one split's ordering is within noise at this sample size), then reports
-the confusion matrix and threshold sweep from a **held-out 20% split** —
-nothing in the app computes performance on training data. Class imbalance is
-handled with `class_weight='balanced'`. Results are written to `ml/metrics.json`,
-which the `/model/metrics` endpoint and the Analytics page read directly.
+`ml/train.py` runs a bake-off — a randomised-search-tuned **Random Forest**,
+**XGBoost**, **LightGBM**, and a Logistic Regression baseline — and picks the
+winner by **5-fold stratified cross-validation on PR-AUC** (one split's ordering
+is within noise at this sample size). The confusion matrix and threshold sweep
+come from a **held-out 20% split**; nothing computes performance on training
+data. Imbalance is handled with `class_weight='balanced'` (or `scale_pos_weight`
+for XGBoost). Results go to `ml/metrics.json`, read directly by the
+`/model/metrics` endpoint and the Analytics page.
 
-| model (5-fold CV) | PR-AUC | F1 | FPR |
+| model (5-fold CV) | PR-AUC | recall | FPR |
 |---|---|---|---|
-| Logistic Regression + class weighting (baseline) | 0.875 ± 0.010 | 0.739 | 7.8% |
-| **Random Forest + class weighting** (selected) | **0.905 ± 0.010** | **0.887** | **1.5%** |
+| Logistic Regression (baseline) | 0.878 ± 0.012 | 0.864 | 3.7% |
+| Random Forest (tuned) | 0.887 ± 0.007 | 0.865 | 1.3% |
+| XGBoost | 0.887 ± 0.011 | 0.864 | 1.3% |
+| **LightGBM** (selected) | **0.890 ± 0.012** | **0.864** | **1.0%** |
 
-The gap between the two is **several times the fold-to-fold spread** — a real
-difference, not a lucky split. The Random Forest matches the baseline's recall
-at roughly **one-fifth the false-positive rate**, which is the whole argument
-for it. Held-out confusion matrix (RF): TP 198 · FP 22 · FN 30 · TN 1350.
+The three tree models are a statistical tie on PR-AUC; **LightGBM is selected
+for the lowest false-positive rate** — it flags roughly a third as many legit
+payments as the baseline at the same recall, and that gap is many times the
+fold-to-fold spread. Held-out (LightGBM): P 0.91 · R 0.88 · F1 0.90 · PR-AUC
+0.90 · FPR 1.4%; confusion matrix TP 385 · FP 38 · FN 52 · TN 2604.
 
-**Calibration.** The shipped model is isotonic-calibrated (`CalibratedClassifierCV`,
-dedicated calibration slice) so `score_transaction()` returns a genuinely
-calibrated P(fraud) — Brier score **0.038 → 0.028** on the held-out set. The
+**Calibration.** The shipped model is isotonic-calibrated
+(`CalibratedClassifierCV` over a frozen base + a dedicated calibration slice, so
+inference stays 1× the base cost) — `score_transaction()` returns a genuinely
+calibrated P(fraud), Brier score **0.032 → 0.022** on the held-out set. The
 *composite* risk score fuses ML + behavioural + network + rule severity and is
-still labelled a risk **indicator**, not a probability; only its ML component is
+still a risk **indicator**, not a probability; only its ML component is
 calibrated. The Analytics page shows the reliability curve and the threshold
-sweep (recall vs. false positives across the operating range).
+sweep.
 
-Dataset: `ml/generate_training_data.py` builds 8,000 synthetic rows from the
-same feature logic as the simulator (so every feature is human-readable), with
-deliberate class overlap on *every* feature + ~2% label noise so the task isn't
-trivially separable. Feature importances are the model's own values, surfaced on
-the Policy page (amount-vs-typical ≈ 43%, absolute amount ≈ 32%, failure streak
-≈ 13%, new device ≈ 9%).
+**Dataset & features.** `ml/generate_training_data.py` builds ~15k rows as
+**per-customer timelines** over a simulated window, then computes the model
+features from each event's position in its timeline — so velocity, recency,
+failure-ratio and device-sharing carry real signal. Fraud is injected as
+**archetypes**: card testing (tight burst of tiny transactions), account
+takeover (new device + method + amount spike after a clean history), bust-out (a
+spending ramp — only the escalated tail is labelled), and coordinated rings
+(fresh accounts sharing a device). Plus deliberate hard negatives (legit
+big-ticket buys, a genuine new device, a flaky-bank retry run) and ~2% symmetric
+label noise. The 14 features are shared by training and serving via
+`app/engine/features_common.py` so they can't drift; top importances are
+absolute amount, time-since-last-payment, amount-vs-typical and amount z-score.
 
 ## 4. Behavioural signals
 

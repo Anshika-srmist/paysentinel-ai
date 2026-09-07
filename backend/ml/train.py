@@ -11,9 +11,13 @@ threshold sweep (those need a concrete test set), and the shipped model is
 calibrated P(fraud) from the transaction features, with the Brier score
 and a reliability curve recorded.
 
+Candidates: Logistic Regression (baseline), a randomised-search-tuned
+Random Forest, XGBoost and LightGBM. Features come from
+`app.engine.features_common` — the same 14 the serving path computes.
+
 Metrics reported are precision / recall / F1 / PR-AUC / false-positive
-rate — not accuracy, which is misleading at a ~14% positive rate
-(predict-always-normal scores ~86%).
+rate — not accuracy, which is misleading at a ~12% positive rate
+(predict-always-normal scores ~88%).
 """
 import json
 import os
@@ -22,6 +26,7 @@ from datetime import date
 import joblib
 import numpy as np
 import pandas as pd
+from lightgbm import LGBMClassifier
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.frozen import FrozenEstimator
@@ -30,15 +35,19 @@ from sklearn.metrics import (
     average_precision_score, brier_score_loss, confusion_matrix, f1_score,
     precision_score, recall_score, roc_auc_score,
 )
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
+from xgboost import XGBClassifier
 
-FEATURES = [
-    "amount", "amount_ratio_to_typical", "is_new_device",
-    "is_new_payment_method", "is_unusual_hour", "recent_failed_count",
-]
+from app.engine.features_common import FEATURE_NAMES
+
+FEATURES = FEATURE_NAMES
 HERE = os.path.dirname(__file__)
 N_FOLDS = 5
 RANDOM_STATE = 42
+
+# Both filled in main(); defaults keep the module importable / testable.
+_RF_PARAMS = {"n_estimators": 300, "max_depth": 10, "min_samples_leaf": 2, "max_features": "sqrt"}
+_SCALE_POS_WEIGHT = 7.0
 
 
 def _make_models() -> dict:
@@ -48,10 +57,36 @@ def _make_models() -> dict:
             class_weight="balanced", max_iter=1000, random_state=RANDOM_STATE
         ),
         "Random Forest + class weighting": RandomForestClassifier(
-            n_estimators=200, max_depth=8, class_weight="balanced",
+            class_weight="balanced", random_state=RANDOM_STATE, n_jobs=-1, **_RF_PARAMS
+        ),
+        "XGBoost": XGBClassifier(
+            n_estimators=300, max_depth=4, learning_rate=0.08,
+            scale_pos_weight=_SCALE_POS_WEIGHT, eval_metric="aucpr",
             random_state=RANDOM_STATE, n_jobs=-1,
         ),
+        "LightGBM": LGBMClassifier(
+            n_estimators=300, max_depth=5, learning_rate=0.05, class_weight="balanced",
+            random_state=RANDOM_STATE, n_jobs=-1, verbose=-1,
+        ),
     }
+
+
+def _tune_rf(X, y) -> dict:
+    """A bounded randomised search for the Random Forest, scored on PR-AUC."""
+    search = RandomizedSearchCV(
+        RandomForestClassifier(class_weight="balanced", random_state=RANDOM_STATE, n_jobs=-1),
+        param_distributions={
+            "n_estimators": [200, 300, 400, 600],
+            "max_depth": [6, 8, 10, 14, None],
+            "min_samples_leaf": [1, 2, 4, 8],
+            "max_features": ["sqrt", "log2", 0.5],
+        },
+        n_iter=15, scoring="average_precision", cv=3,
+        random_state=RANDOM_STATE, n_jobs=-1,
+    )
+    search.fit(X, y)
+    print(f"Tuned RF: {search.best_params_}  (CV PR-AUC {search.best_score_:.4f})")
+    return search.best_params_
 
 
 def _metrics(name: str, y_true, proba, threshold: float = 0.5) -> dict:
@@ -111,8 +146,14 @@ def _cross_validate(X, y) -> list[dict]:
 
 
 def main():
+    global _RF_PARAMS, _SCALE_POS_WEIGHT
     df = pd.read_csv(os.path.join(HERE, "training_data.csv"))
     X, y = df[FEATURES], df["is_risky"]
+    pos_rate = float(y.mean())
+    _SCALE_POS_WEIGHT = round((1 - pos_rate) / pos_rate, 2)
+
+    # 0) tune the Random Forest before it enters the comparison
+    _RF_PARAMS = _tune_rf(X, y)
 
     # 1) model selection — cross-validated
     cv_summary = _cross_validate(X, y)
@@ -179,10 +220,14 @@ def main():
     print(f"\nBrier score: {calibration['brier_score_uncalibrated']} (raw) -> "
           f"{calibration['brier_score_calibrated']} (calibrated)")
 
-    # 4) feature importances — from the base fit (the calibrated wrapper hides them)
+    # 4) feature importances — from the base fit (the calibrated wrapper hides
+    #    them). Normalised to sum to 1: RF gives fractions already, LightGBM /
+    #    XGBoost give raw split/gain counts.
     importances = None
     if hasattr(base, "feature_importances_"):
-        importances = {f: round(float(w), 4) for f, w in zip(FEATURES, base.feature_importances_)}
+        raw = np.asarray(base.feature_importances_, dtype=float)
+        total = raw.sum() or 1.0
+        importances = {f: round(float(w / total), 4) for f, w in zip(FEATURES, raw)}
 
     # 5) ship the calibrated model. `base` is fit on 60% of the data and
     #    `calibrated` wraps it with the isotonic map fit on the 20%
@@ -193,18 +238,19 @@ def main():
     report = {
         "generated": date.today().isoformat(),
         "dataset": {
-            "name": "synthetic payment events (same feature logic as the simulator)",
+            "name": "synthetic per-customer timelines with injected fraud archetypes "
+                    "(card testing / account takeover / bust-out / coordinated ring)",
             "total_records": int(len(df)),
             "training_records": int(len(X_tr)),
             "test_records": int(len(X_te)),
             "positive_rate": round(float(y.mean()), 4),
             "feature_count": len(FEATURES),
         },
-        "imbalance_handling": "class_weight='balanced' on both models",
+        "imbalance_handling": "class_weight='balanced' (LogReg / RF / LightGBM); scale_pos_weight (XGBoost)",
         "evaluation": (
-            f"model selected by {N_FOLDS}-fold stratified CV on PR-AUC; confusion "
-            "matrix and threshold sweep from a held-out 20% split; shipped model "
-            "is isotonic-calibrated"
+            f"4 candidates (tuned RF, XGBoost, LightGBM, LogReg baseline); selected by "
+            f"{N_FOLDS}-fold stratified CV on PR-AUC; confusion matrix and threshold "
+            "sweep from a held-out 20% split; shipped model is isotonic-calibrated"
         ),
         "selected_model": winner_name,
         "cross_validation": cv_summary,

@@ -8,12 +8,20 @@ import { pct } from '../lib/format.js'
 import './pages.css'
 
 const FEATURE_LABEL = {
-  amount_ratio_to_typical: 'Amount vs. customer’s typical',
   amount: 'Absolute amount',
-  recent_failed_count: 'Recent failed attempts',
+  amount_ratio_to_typical: 'Amount vs. customer’s typical',
+  amount_zscore: 'Amount z-score vs. history',
   is_new_device: 'New device',
   is_new_payment_method: 'New payment method',
   is_unusual_hour: 'Unusual hour',
+  hour_sin: 'Time of day (sin)',
+  hour_cos: 'Time of day (cos)',
+  recent_failed_count: 'Recent failed attempts',
+  customer_fail_ratio: 'Recent failure ratio',
+  velocity_1h: 'Transactions in last hour',
+  velocity_24h: 'Transactions in last 24h',
+  secs_since_last_log: 'Time since last payment (log)',
+  device_shared_count: 'Other customers on this device',
 }
 
 const CATEGORY_LABEL = {
