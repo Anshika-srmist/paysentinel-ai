@@ -172,6 +172,10 @@
 .cm--tn { background: var(--surface-sunken); } .cm--tn span { color: var(--ink); }
 
 .thrslider { width: 100%; accent-color: var(--accent); }
+
+.relcurve { width: 100%; height: 120px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-sunken); }
+.relcurve__ideal { stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.relcurve__line { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .thrgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-top: 12px; }
 .thrgrid > div { text-align: center; }
 .thrgrid span { display: block; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }

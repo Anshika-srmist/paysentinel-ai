@@ -120,6 +120,62 @@ export function Analytics() {
         </div>
       )}
 
+      {/* --- cross-validation + calibration --- */}
+      {(m?.cross_validation?.length > 0 || m?.calibration) && (
+        <div className="two-col" style={{ marginTop: 16 }}>
+          {m.cross_validation?.length > 0 && (
+            <section className="card">
+              <div className="card-head"><h2>Cross-validation</h2><span className="muted" style={{ fontSize: 12 }}>{m.cross_validation[0].folds}-fold stratified</span></div>
+              <div className="card-pad" style={{ overflowX: 'auto' }}>
+                <table className="atable">
+                  <thead><tr><th>Model</th><th>PR-AUC</th><th>F1</th><th>FPR</th></tr></thead>
+                  <tbody>
+                    {m.cross_validation.map((r) => (
+                      <tr key={r.model} className={r.model === m.selected_model ? 'is-selected' : ''}>
+                        <td>{r.model.replace(' + class weighting', '').replace(' (baseline)', '')}
+                          {r.model === m.selected_model && <span className="picktag">selected</span>}</td>
+                        <td className="tnum">{r.pr_auc_mean.toFixed(3)} <span className="muted">± {r.pr_auc_std.toFixed(3)}</span></td>
+                        <td className="tnum">{r.f1_mean.toFixed(3)}</td>
+                        <td className="tnum">{pct(r.false_positive_rate_mean, 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+                  Mean ± std across folds. The gap between models is several times the spread — not a single split's noise.
+                </p>
+              </div>
+            </section>
+          )}
+
+          {m.calibration && (
+            <section className="card">
+              <div className="card-head"><h2>Calibration</h2><span className="muted" style={{ fontSize: 12 }}>isotonic</span></div>
+              <div className="card-pad">
+                <div className="thrgrid" style={{ marginBottom: 12 }}>
+                  <div><span className="tnum">{m.calibration.brier_score_uncalibrated.toFixed(3)}</span><em>Brier · raw</em></div>
+                  <div><span className="tnum" style={{ color: 'var(--ok)' }}>{m.calibration.brier_score_calibrated.toFixed(3)}</span><em>Brier · calibrated</em></div>
+                </div>
+                {m.calibration.reliability_curve?.length > 1 && (
+                  <svg viewBox="0 0 100 100" className="relcurve" preserveAspectRatio="none">
+                    <line x1="0" y1="100" x2="100" y2="0" className="relcurve__ideal" />
+                    <polyline
+                      className="relcurve__line"
+                      points={m.calibration.reliability_curve
+                        .map((p) => `${p.mean_predicted * 100},${100 - p.observed_frequency * 100}`)
+                        .join(' ')}
+                    />
+                  </svg>
+                )}
+                <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+                  Predicted vs. observed fraud rate; the diagonal is perfect. {m.calibration.note}
+                </p>
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+
       {/* --- threshold analysis --- */}
       {m?.threshold_sweep?.length > 0 && (
         <section className="card" style={{ marginTop: 16 }}>

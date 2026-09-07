@@ -67,22 +67,30 @@ GNN — explainable detectors). Deploy: Vercel + Render.
 
 ## 3. ML approach — real held-out evaluation
 
-`ml/train.py` trains on a **stratified 80/20 split** and reports every metric on
-the **held-out test set only** — nothing in the app computes performance on
-training data. Class imbalance is handled with `class_weight='balanced'` on both
-models. Results are written to `ml/metrics.json`, which the `/model/metrics`
-endpoint and the Analytics page read directly.
+`ml/train.py` selects the model by **5-fold stratified cross-validation on
+PR-AUC** (one split's ordering is within noise at this sample size), then reports
+the confusion matrix and threshold sweep from a **held-out 20% split** —
+nothing in the app computes performance on training data. Class imbalance is
+handled with `class_weight='balanced'`. Results are written to `ml/metrics.json`,
+which the `/model/metrics` endpoint and the Analytics page read directly.
 
-| model (test set, n=1,600) | precision | recall | F1 | **PR-AUC** | ROC-AUC | **FPR** |
-|---|---|---|---|---|---|---|
-| Logistic Regression + class weighting (baseline) | 0.64 | 0.86 | 0.74 | 0.87 | 0.93 | **7.9%** |
-| **Random Forest + class weighting** (selected) | **0.90** | **0.87** | **0.88** | **0.89** | 0.93 | **1.6%** |
+| model (5-fold CV) | PR-AUC | F1 | FPR |
+|---|---|---|---|
+| Logistic Regression + class weighting (baseline) | 0.875 ± 0.010 | 0.739 | 7.8% |
+| **Random Forest + class weighting** (selected) | **0.905 ± 0.010** | **0.887** | **1.5%** |
 
-Selected on **PR-AUC** (the honest lead metric on a 14%-positive problem). The
-Random Forest matches the baseline's recall at **one-fifth the false-positive
-rate** — that gap is the whole argument for it. Confusion matrix (RF):
-TP 198 · FP 22 · FN 30 · TN 1350. The Analytics page also shows a **threshold
-sweep** (recall vs. false positives across the operating range).
+The gap between the two is **several times the fold-to-fold spread** — a real
+difference, not a lucky split. The Random Forest matches the baseline's recall
+at roughly **one-fifth the false-positive rate**, which is the whole argument
+for it. Held-out confusion matrix (RF): TP 198 · FP 22 · FN 30 · TN 1350.
+
+**Calibration.** The shipped model is isotonic-calibrated (`CalibratedClassifierCV`,
+dedicated calibration slice) so `score_transaction()` returns a genuinely
+calibrated P(fraud) — Brier score **0.038 → 0.028** on the held-out set. The
+*composite* risk score fuses ML + behavioural + network + rule severity and is
+still labelled a risk **indicator**, not a probability; only its ML component is
+calibrated. The Analytics page shows the reliability curve and the threshold
+sweep (recall vs. false positives across the operating range).
 
 Dataset: `ml/generate_training_data.py` builds 8,000 synthetic rows from the
 same feature logic as the simulator (so every feature is human-readable), with

@@ -46,8 +46,16 @@ def model_name() -> str:
 
 
 def feature_importances() -> dict | None:
-    """Per-feature importance for tree models (RandomForest); None for LogReg."""
+    """Per-feature importance for tree models (RandomForest); None for LogReg.
+
+    Read from the bundle: the shipped model is a CalibratedClassifierCV
+    wrapper that hides `feature_importances_`, so train.py stores the base
+    estimator's importances alongside it.
+    """
     bundle = _load()
+    stored = bundle.get("feature_importances")
+    if stored:
+        return {name: round(float(w), 4) for name, w in stored.items()}
     model = bundle["model"]
     if not hasattr(model, "feature_importances_"):
         return None

@@ -1,9 +1,12 @@
+import json
 import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.engine.failure_classifier import classify_failure, FailureCategory, recommended_action_for
-from app.models.risk_model import score_transaction, model_name
+from app.models.risk_model import feature_importances, score_transaction, model_name
+
+_METRICS = json.load(open(os.path.join(os.path.dirname(__file__), "..", "ml", "metrics.json")))
 
 
 def test_temporary_failure_classified_correctly():
@@ -53,3 +56,24 @@ def test_risk_model_scores_obvious_fraud_pattern_higher_than_normal():
 
 def test_model_name_is_reported():
     assert model_name() in ("Logistic Regression (baseline)", "Random Forest")
+
+
+def test_feature_importances_survive_the_calibration_wrapper():
+    # the shipped model is a CalibratedClassifierCV, which hides
+    # feature_importances_ — they must still come through, from the bundle.
+    fi = feature_importances()
+    assert fi is not None
+    assert abs(sum(fi.values()) - 1.0) < 0.05
+
+
+def test_metrics_report_has_cross_validation_and_calibration():
+    cv = _METRICS["cross_validation"]
+    assert len(cv) >= 2 and all("pr_auc_mean" in r and "pr_auc_std" in r for r in cv)
+    # selection is defensible: the winner's CV PR-AUC beats the runner-up by
+    # more than the fold-to-fold spread.
+    ranked = sorted(cv, key=lambda r: r["pr_auc_mean"], reverse=True)
+    assert ranked[0]["pr_auc_mean"] - ranked[1]["pr_auc_mean"] > ranked[0]["pr_auc_std"]
+
+    cal = _METRICS["calibration"]
+    assert cal["brier_score_calibrated"] <= cal["brier_score_uncalibrated"]
+    assert len(cal["reliability_curve"]) >= 2

@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-04",
+  "generated": "2026-09-07",
   "dataset": {
     "name": "synthetic payment events (same feature logic as the simulator)",
     "total_records": 8000,
@@ -9,8 +9,42 @@
     "feature_count": 6
   },
   "imbalance_handling": "class_weight='balanced' on both models",
-  "evaluation": "held-out 20% stratified test split; no metric computed on training data",
+  "evaluation": "model selected by 5-fold stratified CV on PR-AUC; confusion matrix and threshold sweep from a held-out 20% split; shipped model is isotonic-calibrated",
   "selected_model": "Random Forest + class weighting",
+  "cross_validation": [
+    {
+      "model": "Logistic Regression + class weighting (baseline)",
+      "folds": 5,
+      "precision_mean": 0.6477,
+      "precision_std": 0.0119,
+      "recall_mean": 0.8598,
+      "recall_std": 0.0089,
+      "f1_mean": 0.7388,
+      "f1_std": 0.0082,
+      "pr_auc_mean": 0.8745,
+      "pr_auc_std": 0.0104,
+      "roc_auc_mean": 0.9313,
+      "roc_auc_std": 0.0087,
+      "false_positive_rate_mean": 0.0779,
+      "false_positive_rate_std": 0.0041
+    },
+    {
+      "model": "Random Forest + class weighting",
+      "folds": 5,
+      "precision_mean": 0.9062,
+      "precision_std": 0.0127,
+      "recall_mean": 0.8694,
+      "recall_std": 0.0156,
+      "f1_mean": 0.8873,
+      "f1_std": 0.0093,
+      "pr_auc_mean": 0.9053,
+      "pr_auc_std": 0.0099,
+      "roc_auc_mean": 0.9406,
+      "roc_auc_std": 0.0076,
+      "false_positive_rate_mean": 0.015,
+      "false_positive_rate_std": 0.0023
+    }
+  ],
   "models": [
     {
       "model": "Logistic Regression + class weighting (baseline)",
@@ -183,12 +217,40 @@
       "fraud_missed": 41
     }
   ],
+  "calibration": {
+    "method": "isotonic (CalibratedClassifierCV, cv='prefit', 20% calibration slice)",
+    "brier_score_uncalibrated": 0.0378,
+    "brier_score_calibrated": 0.0279,
+    "reliability_curve": [
+      {
+        "mean_predicted": 0.0168,
+        "observed_frequency": 0.0209
+      },
+      {
+        "mean_predicted": 0.0184,
+        "observed_frequency": 0.0251
+      },
+      {
+        "mean_predicted": 0.0268,
+        "observed_frequency": 0.0066
+      },
+      {
+        "mean_predicted": 0.3338,
+        "observed_frequency": 0.36
+      },
+      {
+        "mean_predicted": 0.9832,
+        "observed_frequency": 0.975
+      }
+    ],
+    "note": "Calibrates the ML component only. The composite risk score fuses ML + behavioural + network + rule severity and remains a risk indicator, not a calibrated probability."
+  },
   "feature_importances": {
-    "amount": 0.3225,
-    "amount_ratio_to_typical": 0.4324,
-    "is_new_device": 0.0933,
-    "is_new_payment_method": 0.0209,
-    "is_unusual_hour": 0.003,
-    "recent_failed_count": 0.1277
+    "amount": 0.3304,
+    "amount_ratio_to_typical": 0.4426,
+    "is_new_device": 0.0851,
+    "is_new_payment_method": 0.0174,
+    "is_unusual_hour": 0.0034,
+    "recent_failed_count": 0.1212
   }
 }
