@@ -99,7 +99,8 @@ export function Analytics() {
                 </tbody>
               </table>
               <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
-                Random Forest is selected on PR-AUC — same recall as the baseline at a fraction of the false-positive rate.
+                {m.selected_model.split(' + ')[0].split(' (')[0]} is selected — it holds up best across time-ordered
+                folds and flags far fewer legit payments than the baseline.
               </p>
             </div>
           </section>
@@ -125,7 +126,7 @@ export function Analytics() {
         <div className="two-col" style={{ marginTop: 16 }}>
           {m.cross_validation?.length > 0 && (
             <section className="card">
-              <div className="card-head"><h2>Cross-validation</h2><span className="muted" style={{ fontSize: 12 }}>{m.cross_validation[0].folds}-fold stratified</span></div>
+              <div className="card-head"><h2>Cross-validation</h2><span className="muted" style={{ fontSize: 12 }}>{m.cross_validation[0].folds}-fold, time-ordered</span></div>
               <div className="card-pad" style={{ overflowX: 'auto' }}>
                 <table className="atable">
                   <thead><tr><th>Model</th><th>PR-AUC</th><th>F1</th><th>FPR</th></tr></thead>
@@ -142,8 +143,13 @@ export function Analytics() {
                   </tbody>
                 </table>
                 <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
-                  Mean ± std across folds. The tree models tie on PR-AUC; the selected one wins on false-positive rate
-                  by a margin many times the fold spread.
+                  Folds are time-ordered (train on the earlier window, validate on the next) so future patterns can’t
+                  leak into validation.
+                  {m.split_validation && (
+                    <> Leakage check: time-ordered PR-AUC {m.split_validation.temporal_cv_pr_auc.toFixed(3)} vs. a random
+                    shuffle {m.split_validation.random_cv_pr_auc.toFixed(3)} — a {m.split_validation.gap >= 0 ? '+' : ''}
+                    {m.split_validation.gap.toFixed(3)} gap, i.e. the evaluation isn’t inflated.</>
+                  )}
                 </p>
               </div>
             </section>
@@ -151,7 +157,7 @@ export function Analytics() {
 
           {m.calibration && (
             <section className="card">
-              <div className="card-head"><h2>Calibration</h2><span className="muted" style={{ fontSize: 12 }}>isotonic</span></div>
+              <div className="card-head"><h2>Calibration</h2><span className="muted" style={{ fontSize: 12 }}>{(m.calibration.method || '').split(' ')[0]}</span></div>
               <div className="card-pad">
                 <div className="thrgrid" style={{ marginBottom: 12 }}>
                   <div><span className="tnum">{m.calibration.brier_score_uncalibrated.toFixed(3)}</span><em>Brier · raw</em></div>

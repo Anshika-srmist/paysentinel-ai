@@ -107,13 +107,19 @@ def _fail_ratio(prior: List[PaymentEvent], window: int = 10) -> float:
 
 
 def _device_shared_count(db: Session, event: PaymentEvent) -> int:
-    """Distinct *other* customers who have transacted from this device."""
+    """Distinct *other* customers who used this device *before* this event.
+
+    Bounded to earlier events (`id < event.id`) so it means the same thing
+    the training generator computes causally — not "all customers ever on
+    this device", which would drift as more traffic arrives.
+    """
     if not event.device_id:
         return 0
     return int(
         db.query(func.count(distinct(PaymentEvent.customer_id)))
         .filter(PaymentEvent.device_id == event.device_id)
         .filter(PaymentEvent.customer_id != event.customer_id)
+        .filter(PaymentEvent.id < event.id)
         .scalar()
         or 0
     )

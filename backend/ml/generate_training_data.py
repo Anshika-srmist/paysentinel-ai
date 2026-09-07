@@ -180,10 +180,21 @@ def _feature_rows(all_events: list[dict]) -> list[dict]:
     for e in all_events:
         by_cust[e["customer_id"]].append(e)
 
-    # device -> set of customers, for device_shared_count
-    dev_customers: dict[str, set] = defaultdict(set)
+    # device_shared_count, computed CAUSALLY: at each event, how many *other*
+    # customers had already used this device by then. Walking each device's
+    # events in time order and snapshotting the running set keeps it honest
+    # for a temporal split (a random split would otherwise leak the final
+    # count back to the device's first event).
+    dsc_by_event: dict[int, int] = {}
+    dev_events: dict[str, list[dict]] = defaultdict(list)
     for e in all_events:
-        dev_customers[e["device_id"]].add(e["customer_id"])
+        dev_events[e["device_id"]].append(e)
+    for evs in dev_events.values():
+        evs.sort(key=lambda x: x["ts"])
+        seen: set = set()
+        for e in evs:
+            dsc_by_event[id(e)] = len(seen - {e["customer_id"]})
+            seen.add(e["customer_id"])
 
     rows = []
     for cid, evs in by_cust.items():
@@ -210,16 +221,17 @@ def _feature_rows(all_events: list[dict]) -> list[dict]:
             v1h = sum(1 for p in prior if (e["ts"] - p["ts"]).total_seconds() <= 3600)
             v24h = sum(1 for p in prior if (e["ts"] - p["ts"]).total_seconds() <= 86400)
             secs_since = (e["ts"] - prior[-1]["ts"]).total_seconds() if prior else None
-            dsc = len(dev_customers[e["device_id"]] - {cid})
 
             feats = assemble(
                 amount=e["amount"], typical_amount=typical, amount_mean=mean, amount_std=std,
                 is_new_device=bool(prior) and e["device_id"] not in seen_devices,
                 is_new_payment_method=bool(prior) and e["payment_method"] not in seen_methods,
                 event_hour=e["hour"], recent_failed_count=streak, customer_fail_ratio=fail_ratio,
-                velocity_1h=v1h, velocity_24h=v24h, secs_since_last=secs_since, device_shared_count=dsc,
+                velocity_1h=v1h, velocity_24h=v24h, secs_since_last=secs_since,
+                device_shared_count=dsc_by_event[id(e)],
             )
             feats["is_risky"] = e["is_risky"]
+            feats["event_ts"] = e["ts"].timestamp()
             rows.append(feats)
             seen_devices.add(e["device_id"])
             seen_methods.add(e["payment_method"])
@@ -255,8 +267,11 @@ def generate_dataset(seed: int = SEED) -> pd.DataFrame:
         if rng.random() < LABEL_NOISE_RATE:
             row["is_risky"] = 1 - row["is_risky"]
 
-    df = pd.DataFrame(rows)[[*FEATURE_NAMES, "is_risky"]]
-    return df.sample(frac=1, random_state=seed).reset_index(drop=True)
+    # Time-ordered, NOT shuffled — train.py splits on time (train on the
+    # earlier window, test on the later one). `event_ts` is kept for the
+    # split and dropped before fitting.
+    df = pd.DataFrame(rows)[[*FEATURE_NAMES, "is_risky", "event_ts"]]
+    return df.sort_values("event_ts").reset_index(drop=True)
 
 
 if __name__ == "__main__":

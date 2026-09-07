@@ -91,3 +91,11 @@ def test_metrics_report_has_cross_validation_and_calibration():
     cal = _METRICS["calibration"]
     assert cal["brier_score_calibrated"] <= cal["brier_score_uncalibrated"]
     assert len(cal["reliability_curve"]) >= 2
+
+
+def test_temporal_split_shows_no_meaningful_leakage():
+    sv = _METRICS["split_validation"]
+    # random-CV PR-AUC minus time-ordered PR-AUC. A large positive gap would
+    # mean the random split was leaking future information into the test set.
+    assert abs(sv["gap"]) < 0.05
+    assert sv["temporal_cv_pr_auc"] > 0.5

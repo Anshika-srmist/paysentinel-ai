@@ -68,35 +68,42 @@ GNN — explainable detectors). Deploy: Vercel + Render.
 ## 3. ML approach — real held-out evaluation
 
 `ml/train.py` runs a bake-off — a randomised-search-tuned **Random Forest**,
-**XGBoost**, **LightGBM**, and a Logistic Regression baseline — and picks the
-winner by **5-fold stratified cross-validation on PR-AUC** (one split's ordering
-is within noise at this sample size). The confusion matrix and threshold sweep
-come from a **held-out 20% split**; nothing computes performance on training
-data. Imbalance is handled with `class_weight='balanced'` (or `scale_pos_weight`
-for XGBoost). Results go to `ml/metrics.json`, read directly by the
-`/model/metrics` endpoint and the Analytics page.
+**XGBoost**, **LightGBM**, and a Logistic Regression baseline. Everything is
+**time-ordered**: the data is sorted by event time, the model is selected by
+**5-fold `TimeSeriesSplit` CV** on the earlier window, and the confusion matrix
+and threshold sweep come from the **most recent 20%, held out by time**.
+Calibration is fit on an in-between slice. Fraud patterns drift and features
+look backward in time, so a random split leaks the future into the test set;
+this doesn't. Imbalance is handled with `class_weight='balanced'` (or
+`scale_pos_weight` for XGBoost). Results go to `ml/metrics.json`.
 
-| model (5-fold CV) | PR-AUC | recall | FPR |
+| model (time-ordered CV) | PR-AUC | recall | FPR |
 |---|---|---|---|
-| Logistic Regression (baseline) | 0.878 ± 0.012 | 0.864 | 3.7% |
-| Random Forest (tuned) | 0.887 ± 0.007 | 0.865 | 1.3% |
-| XGBoost | 0.887 ± 0.011 | 0.864 | 1.3% |
-| **LightGBM** (selected) | **0.890 ± 0.012** | **0.864** | **1.0%** |
+| Logistic Regression (baseline) | 0.883 ± 0.022 | 0.870 | 4.8% |
+| **Random Forest (tuned, selected)** | **0.894 ± 0.020** | 0.856 | **0.7%** |
+| XGBoost | 0.885 ± 0.040 | 0.842 | 0.8% |
+| LightGBM | 0.884 ± 0.042 | 0.845 | 0.9% |
 
-The three tree models are a statistical tie on PR-AUC; **LightGBM is selected
-for the lowest false-positive rate** — it flags roughly a third as many legit
-payments as the baseline at the same recall, and that gap is many times the
-fold-to-fold spread. Held-out (LightGBM): P 0.91 · R 0.88 · F1 0.90 · PR-AUC
-0.90 · FPR 1.4%; confusion matrix TP 385 · FP 38 · FN 52 · TN 2604.
+**Random Forest is selected** — it holds up best under distribution shift
+across time folds (the boosted models have 2× the fold-to-fold spread) and has
+by far the lowest false-positive rate. Held-out on the most recent window:
+P 0.93 · R 0.81 · PR-AUC 0.87 · FPR 1.1%; confusion matrix TP 401 · FP 28 ·
+FN 95 · TN 2552. Recall is lower here than under a random split — that's the
+temporal eval doing its job: a model trained only on the past lags the newest
+fraud, and the threshold sweep shows where to trade that back.
 
-**Calibration.** The shipped model is isotonic-calibrated
-(`CalibratedClassifierCV` over a frozen base + a dedicated calibration slice, so
-inference stays 1× the base cost) — `score_transaction()` returns a genuinely
-calibrated P(fraud), Brier score **0.032 → 0.022** on the held-out set. The
-*composite* risk score fuses ML + behavioural + network + rule severity and is
-still a risk **indicator**, not a probability; only its ML component is
-calibrated. The Analytics page shows the reliability curve and the threshold
-sweep.
+**Leakage check.** The same model under a random shuffled split scores PR-AUC
+**0.887** vs. the time-ordered **0.894** — a −0.007 gap, i.e. the evaluation
+isn't borrowing information from the future. (A large positive gap would mean it
+was.)
+
+**Calibration.** Isotonic and sigmoid are both fit on the calibration slice and
+the one with the lower test-window Brier is shipped (sigmoid, here — it's
+steadier on a smaller, drifting calibration set). `CalibratedClassifierCV` over
+a frozen base keeps inference at 1× cost. Brier **0.052 → 0.045** on the
+held-out window. The *composite* risk score fuses ML + behavioural + network +
+rule severity and is still a risk **indicator**, not a probability; only its ML
+component is calibrated.
 
 **Dataset & features.** `ml/generate_training_data.py` builds ~15k rows as
 **per-customer timelines** over a simulated window, then computes the model

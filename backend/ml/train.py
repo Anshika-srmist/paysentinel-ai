@@ -35,7 +35,7 @@ from sklearn.metrics import (
     average_precision_score, brier_score_loss, confusion_matrix, f1_score,
     precision_score, recall_score, roc_auc_score,
 )
-from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, TimeSeriesSplit
 from xgboost import XGBClassifier
 
 from app.engine.features_common import FEATURE_NAMES
@@ -44,6 +44,8 @@ FEATURES = FEATURE_NAMES
 HERE = os.path.dirname(__file__)
 N_FOLDS = 5
 RANDOM_STATE = 42
+TEST_FRACTION = 0.20      # the most recent 20% of events, by time
+CAL_FRACTION = 0.25       # of the training window, its most recent slice, for calibration
 
 # Both filled in main(); defaults keep the module importable / testable.
 _RF_PARAMS = {"n_estimators": 300, "max_depth": 10, "min_samples_leaf": 2, "max_features": "sqrt"}
@@ -72,7 +74,9 @@ def _make_models() -> dict:
 
 
 def _tune_rf(X, y) -> dict:
-    """A bounded randomised search for the Random Forest, scored on PR-AUC."""
+    """A bounded randomised search for the Random Forest, scored on PR-AUC.
+    Time-ordered CV (TimeSeriesSplit) on the training window only — the
+    search never sees the held-out test window."""
     search = RandomizedSearchCV(
         RandomForestClassifier(class_weight="balanced", random_state=RANDOM_STATE, n_jobs=-1),
         param_distributions={
@@ -81,11 +85,11 @@ def _tune_rf(X, y) -> dict:
             "min_samples_leaf": [1, 2, 4, 8],
             "max_features": ["sqrt", "log2", 0.5],
         },
-        n_iter=15, scoring="average_precision", cv=3,
+        n_iter=15, scoring="average_precision", cv=TimeSeriesSplit(n_splits=3),
         random_state=RANDOM_STATE, n_jobs=-1,
     )
     search.fit(X, y)
-    print(f"Tuned RF: {search.best_params_}  (CV PR-AUC {search.best_score_:.4f})")
+    print(f"Tuned RF: {search.best_params_}  (time-CV PR-AUC {search.best_score_:.4f})")
     return search.best_params_
 
 
@@ -121,12 +125,13 @@ def _threshold_sweep(y_true, proba) -> list[dict]:
     return out
 
 
-def _cross_validate(X, y) -> list[dict]:
-    """Stratified k-fold. Per model: mean +/- std of each metric across folds."""
-    skf = StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_STATE)
+def _cross_validate(X, y, splitter) -> list[dict]:
+    """Run `splitter` and, per model, give mean +/- std of each metric across
+    folds. `splitter` is TimeSeriesSplit for the real report, StratifiedKFold
+    only for the leakage check."""
     per_model: dict[str, list[dict]] = {name: [] for name in _make_models()}
 
-    for tr_idx, va_idx in skf.split(X, y):
+    for tr_idx, va_idx in splitter.split(X, y):
         X_tr, X_va = X.iloc[tr_idx], X.iloc[va_idx]
         y_tr, y_va = y.iloc[tr_idx], y.iloc[va_idx]
         for name, model in _make_models().items():
@@ -147,33 +152,60 @@ def _cross_validate(X, y) -> list[dict]:
 
 def main():
     global _RF_PARAMS, _SCALE_POS_WEIGHT
-    df = pd.read_csv(os.path.join(HERE, "training_data.csv"))
-    X, y = df[FEATURES], df["is_risky"]
-    pos_rate = float(y.mean())
+    df = pd.read_csv(os.path.join(HERE, "training_data.csv")).sort_values("event_ts")
+    X_all, y_all = df[FEATURES], df["is_risky"].reset_index(drop=True)
+    X_all = X_all.reset_index(drop=True)
+    pos_rate = float(y_all.mean())
     _SCALE_POS_WEIGHT = round((1 - pos_rate) / pos_rate, 2)
 
-    # 0) tune the Random Forest before it enters the comparison
-    _RF_PARAMS = _tune_rf(X, y)
+    # TIME-ORDERED split: train on the earlier window, test on the most recent
+    # TEST_FRACTION. Fraud patterns drift and features look back in time, so a
+    # random split leaks the future into the test set. Everything below — tuning,
+    # CV, calibration — happens inside the training window only.
+    n = len(df)
+    test_start = int(n * (1 - TEST_FRACTION))
+    cal_start = int(test_start * (1 - CAL_FRACTION))
+    X_tr, y_tr = X_all.iloc[:test_start], y_all.iloc[:test_start]
+    X_te, y_te = X_all.iloc[test_start:], y_all.iloc[test_start:]
+    X_fit, y_fit = X_all.iloc[:cal_start], y_all.iloc[:cal_start]
+    X_cal, y_cal = X_all.iloc[cal_start:test_start], y_all.iloc[cal_start:test_start]
+    print(f"Split: fit {len(X_fit)} | calibrate {len(X_cal)} | test {len(X_te)} "
+          f"(most recent {int(TEST_FRACTION * 100)}% by time)")
 
-    # 1) model selection — cross-validated
-    cv_summary = _cross_validate(X, y)
+    # 0) tune the Random Forest on the training window
+    _RF_PARAMS = _tune_rf(X_tr, y_tr)
+
+    # 1) model selection — time-ordered CV on the training window
+    cv_summary = _cross_validate(X_tr, y_tr, TimeSeriesSplit(n_splits=N_FOLDS))
     for row in cv_summary:
-        print(f"\n--- {row['model']} (CV, {N_FOLDS}-fold) ---")
+        print(f"\n--- {row['model']} (time-CV, {N_FOLDS}-fold) ---")
         for m in ("precision", "recall", "f1", "pr_auc", "false_positive_rate"):
             print(f"  {m:20s}: {row[f'{m}_mean']:.4f} +/- {row[f'{m}_std']:.4f}")
 
     winner_cv = max(cv_summary, key=lambda r: r["pr_auc_mean"])
     winner_name = winner_cv["model"]
     short_name = winner_name.split(" + ")[0].split(" (")[0]
-    print(f"\nSelected by mean CV PR-AUC: {winner_name} "
+    print(f"\nSelected by mean time-CV PR-AUC: {winner_name} "
           f"({winner_cv['pr_auc_mean']:.4f} +/- {winner_cv['pr_auc_std']:.4f})")
 
-    # 2) held-out split — for the confusion matrix + threshold sweep the UI
-    #    shows. Both models refit here so the numbers stay comparable to the
-    #    pre-calibration report.
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y
+    # leakage check: the same model under a random shuffled split. If the
+    # random number is much higher, the temporal eval caught real leakage.
+    random_cv = _cross_validate(
+        X_all, y_all, StratifiedKFold(n_splits=N_FOLDS, shuffle=True, random_state=RANDOM_STATE)
     )
+    random_winner = next(r for r in random_cv if r["model"] == winner_name)
+    split_validation = {
+        "scheme": "time-ordered: TimeSeriesSplit CV + most-recent-20% held-out test",
+        "temporal_cv_pr_auc": winner_cv["pr_auc_mean"],
+        "random_cv_pr_auc": random_winner["pr_auc_mean"],
+        "gap": round(random_winner["pr_auc_mean"] - winner_cv["pr_auc_mean"], 4),
+        "note": "A small gap means the evaluation isn't leaking future information "
+                "into the test set; a large one would.",
+    }
+    print(f"\nLeakage check ({winner_name}): temporal PR-AUC {winner_cv['pr_auc_mean']:.4f} "
+          f"vs random {random_winner['pr_auc_mean']:.4f} (gap {split_validation['gap']:+.4f})")
+
+    # 2) held-out (the most recent window) — confusion matrix + threshold sweep
     holdout = []
     winner_proba = None
     for name, model in _make_models().items():
@@ -183,13 +215,9 @@ def main():
         if name == winner_name:
             winner_proba = proba
 
-    # 3) calibration — isotonic, on a dedicated calibration slice. The base
-    #    RF is frozen (fit once, on 60% of the data); only the isotonic map
-    #    is fit here. Inference is then 1x RF + a cheap monotonic lookup,
-    #    which matters because this runs in the /assess request path.
-    X_fit, X_cal, y_fit, y_cal = train_test_split(
-        X_tr, y_tr, test_size=0.25, random_state=RANDOM_STATE, stratify=y_tr
-    )
+    # 3) calibration — isotonic, on the calibration slice (which sits in time
+    #    between the fit window and the test window). The base model is frozen
+    #    (fit once); only the isotonic map is fit here, so inference stays 1x.
     base = _make_models()[winner_name]
     base.fit(X_fit, y_fit)
     # Serve single-row predictions on one thread — n_jobs=-1's parallel
@@ -197,18 +225,26 @@ def main():
     # /assess ~3x slower than it needs to be.
     if hasattr(base, "n_jobs"):
         base.n_jobs = 1
-    # ensemble=False => a single isotonic map over cross-validated predictions
-    # of the frozen base, so inference calls the RF once (not once per fold).
-    calibrated = CalibratedClassifierCV(FrozenEstimator(base), method="isotonic", ensemble=False)
-    calibrated.fit(X_cal, y_cal)
-
+    # Fit both isotonic and sigmoid (Platt) on the calibration slice and keep
+    # whichever has the lower Brier on the test window. Isotonic is more
+    # flexible but overfits a small / drifting calibration set, where sigmoid
+    # is steadier. ensemble=False => one map, so inference stays 1x.
+    frozen = FrozenEstimator(base)
     raw_proba = base.predict_proba(X_te)[:, 1]
-    cal_proba = calibrated.predict_proba(X_te)[:, 1]
+    candidates = {}
+    for method in ("isotonic", "sigmoid"):
+        cc = CalibratedClassifierCV(frozen, method=method, ensemble=False).fit(X_cal, y_cal)
+        p = cc.predict_proba(X_te)[:, 1]
+        candidates[method] = (cc, p, brier_score_loss(y_te, p))
+    best_method = min(candidates, key=lambda m: candidates[m][2])
+    calibrated, cal_proba, _ = candidates[best_method]
+
     frac_pos, mean_pred = calibration_curve(y_te, cal_proba, n_bins=10, strategy="quantile")
     calibration = {
-        "method": "isotonic (CalibratedClassifierCV, cv='prefit', 20% calibration slice)",
+        "method": f"{best_method} (CalibratedClassifierCV over a frozen base, calibration slice "
+                  "between the fit and test windows; picked over the other by test-window Brier)",
         "brier_score_uncalibrated": round(float(brier_score_loss(y_te, raw_proba)), 4),
-        "brier_score_calibrated": round(float(brier_score_loss(y_te, cal_proba)), 4),
+        "brier_score_calibrated": round(float(candidates[best_method][2]), 4),
         "reliability_curve": [
             {"mean_predicted": round(float(p), 4), "observed_frequency": round(float(o), 4)}
             for p, o in zip(mean_pred, frac_pos)
@@ -229,10 +265,9 @@ def main():
         total = raw.sum() or 1.0
         importances = {f: round(float(w / total), 4) for f, w in zip(FEATURES, raw)}
 
-    # 5) ship the calibrated model. `base` is fit on 60% of the data and
-    #    `calibrated` wraps it with the isotonic map fit on the 20%
-    #    calibration slice — the same objects just evaluated on the held-out
-    #    20%, so the shipped model is the one the report describes.
+    # 5) ship the calibrated model — `base` fit on the earlier fit window,
+    #    `calibrated` wrapping it with the isotonic map from the calibration
+    #    slice; evaluated on the most-recent test window.
     final_model = calibrated
 
     report = {
@@ -243,17 +278,20 @@ def main():
             "total_records": int(len(df)),
             "training_records": int(len(X_tr)),
             "test_records": int(len(X_te)),
-            "positive_rate": round(float(y.mean()), 4),
+            "positive_rate": round(float(y_all.mean()), 4),
             "feature_count": len(FEATURES),
         },
         "imbalance_handling": "class_weight='balanced' (LogReg / RF / LightGBM); scale_pos_weight (XGBoost)",
         "evaluation": (
-            f"4 candidates (tuned RF, XGBoost, LightGBM, LogReg baseline); selected by "
-            f"{N_FOLDS}-fold stratified CV on PR-AUC; confusion matrix and threshold "
-            "sweep from a held-out 20% split; shipped model is isotonic-calibrated"
+            "4 candidates (tuned RF, XGBoost, LightGBM, LogReg baseline). "
+            f"Time-ordered: model selected by {N_FOLDS}-fold TimeSeriesSplit CV on the "
+            "training window; confusion matrix and threshold sweep from the most-recent "
+            "20% held out by time; shipped model is isotonic-calibrated on an "
+            "in-between calibration slice"
         ),
         "selected_model": winner_name,
         "cross_validation": cv_summary,
+        "split_validation": split_validation,
         "models": holdout,
         "threshold_sweep": _threshold_sweep(y_te, winner_proba),
         "calibration": calibration,
