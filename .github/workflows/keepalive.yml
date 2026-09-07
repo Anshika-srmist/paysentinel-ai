@@ -1,0 +1,23 @@
+name: keep-alive
+
+# Render's free web tier sleeps after ~15 min idle, and the first request
+# after that takes ~60s (it also runs the Alembic migration + seed + model
+# load on boot). This pings the health endpoint every 10 minutes so a demo
+# or a judge never hits a cold start. A single always-on free service fits
+# within Render's 750 instance-hours/month.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}      # allow a manual run from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 \
+            https://paysentinel-ai.onrender.com/health)
+          echo "health -> $code"
+          test "$code" = "200"

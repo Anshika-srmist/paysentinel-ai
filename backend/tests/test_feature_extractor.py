@@ -27,6 +27,7 @@ def db():
         yield session
     finally:
         session.close()
+        engine.dispose()   # close the StaticPool's sqlite connection (no ResourceWarning)
 
 
 def _add(db, **overrides):

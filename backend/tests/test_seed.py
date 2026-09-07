@@ -22,6 +22,7 @@ def db():
         yield session
     finally:
         session.close()
+        engine.dispose()   # close the StaticPool's sqlite connection (no ResourceWarning)
 
 
 def test_seed_populates_an_empty_database(db, monkeypatch):

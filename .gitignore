@@ -34,6 +34,3 @@ frontend/build/
 .vscode/
 .idea/
 .DS_Store
-
-# stale Day 1/2 duplicate subtree — safe to delete the folder
-/paysentinel/

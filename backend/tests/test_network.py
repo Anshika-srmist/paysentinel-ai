@@ -27,6 +27,7 @@ def db(monkeypatch):
         yield s
     finally:
         s.close()
+        eng.dispose()   # close the StaticPool's sqlite connection (no ResourceWarning)
 
 
 def test_ring_transaction_lights_up_the_network(db):
