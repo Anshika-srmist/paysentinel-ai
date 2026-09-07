@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 from app.cache import cache_clear, limiter
 from app.db.database import Base, get_db
 from app.main import app
+from app.observability import metrics as _metrics
 
 
 @pytest.fixture(scope="session")
@@ -45,8 +46,9 @@ def _isolated_db(_engine):
         finally:
             db.close()
 
-    cache_clear()    # the 15s response cache must not leak state between tests
-    limiter.reset()  # nor the in-memory rate-limit counters
+    cache_clear()     # the 15s response cache must not leak state between tests
+    limiter.reset()   # nor the in-memory rate-limit counters
+    _metrics.reset()  # nor the /ops/metrics counters
     app.dependency_overrides[get_db] = _override_get_db
     yield
     app.dependency_overrides.pop(get_db, None)

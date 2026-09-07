@@ -22,6 +22,13 @@ from sqlalchemy.orm import Session
 
 from app.cache import cached, limiter
 from app.db.database import SessionLocal, get_db
+from app.observability import (
+    RequestContextMiddleware,
+    configure_logging,
+    get_logger,
+    init_sentry,
+    metrics,
+)
 from app.engine import network, scenarios
 from app.engine.feature_extractor import customer_baseline
 from app.engine.pipeline import process_event
@@ -41,6 +48,10 @@ from app.models.schemas import (
     StatsSummary,
 )
 from app.seed import seed_if_empty
+
+configure_logging()
+init_sentry()
+log = get_logger("paysentinel")
 
 # Optional shared-secret gate for the integration endpoints. Unset => open
 # (fine for the demo). Set PAYSENTINEL_API_KEY to require X-API-Key.
@@ -98,6 +109,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Outermost app middleware: request id + timing + per-request log line + metrics.
+app.add_middleware(RequestContextMiddleware)
+
 # Decisions that mean "money is not safely through yet".
 AT_RISK_DECISIONS = ("VERIFY", "HOLD")
 
@@ -128,6 +142,14 @@ def health(db: Session = Depends(get_db)):
     return {"status": "ok", **checks}
 
 
+@app.get("/ops/metrics")
+def ops_metrics():
+    """In-process counters since boot: request volume + p50/p95 latency per
+    route, 5xx count, and the decision mix. Not Prometheus — a hosted
+    scraper can be added later; this is enough to see what's slow or noisy."""
+    return metrics.snapshot()
+
+
 @app.post("/payments", response_model=PaymentEventOut, status_code=201)
 def ingest_payment(event: PaymentEventIn, db: Session = Depends(get_db)):
     db_event = PaymentEvent(**event.model_dump())
@@ -139,8 +161,8 @@ def ingest_payment(event: PaymentEventIn, db: Session = Depends(get_db)):
     # event, so it's caught and logged rather than surfaced as a 500.
     try:
         process_event(db, db_event)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[pipeline] failed for {db_event.transaction_id}: {exc}")
+    except Exception:  # noqa: BLE001
+        log.exception("pipeline failed for %s during ingest", db_event.transaction_id)
 
     return db_event
 
@@ -185,14 +207,15 @@ def assess(request: Request, req: AssessRequest, db: Session = Depends(get_db)):
     # a real 500 instead of letting an unrelated exception leak out raw.
     try:
         d = process_event(db, event)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[assess] risk engine failed for {txn}: {exc}")
+    except Exception:  # noqa: BLE001
+        log.exception("assess: risk engine failed for %s", txn)
         db.delete(event)
         db.commit()
         raise HTTPException(
             status_code=500,
             detail="The risk engine could not score this transaction. Nothing was recorded — safe to retry.",
         )
+    metrics.record_decision(d.decision)
     net = json.loads(d.network_json) if d.network_json else {}
     return AssessResponse(
         transaction_id=txn,
@@ -244,15 +267,16 @@ async def razorpay_webhook(
     db.refresh(event)
     try:
         decision = process_event(db, event)
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         # Delete rather than leave a decision-less row: the "already
         # processed" short-circuit above would otherwise permanently mark
         # this transaction as handled, so Razorpay's webhook retry could
         # never get it scored. A 500 here tells Razorpay to redeliver.
-        print(f"[webhook] risk engine failed for {event.transaction_id}: {exc}")
+        log.exception("webhook: risk engine failed for %s", event.transaction_id)
         db.delete(event)
         db.commit()
         raise HTTPException(status_code=500, detail="scoring failed; not recorded, safe to redeliver")
+    metrics.record_decision(decision.decision)
     return {
         "received": True,
         "scored": True,
@@ -328,8 +352,8 @@ def simulate_scenario(request: Request, body: dict, db: Session = Depends(get_db
         return scenarios.run(db, name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:  # noqa: BLE001
-        print(f"[scenario] '{name}' failed: {exc}")
+    except Exception:  # noqa: BLE001
+        log.exception("scenario '%s' failed to run", name)
         raise HTTPException(status_code=500, detail=f"scenario '{name}' failed to run — check server logs")
 
 

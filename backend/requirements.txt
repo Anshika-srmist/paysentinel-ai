@@ -24,6 +24,11 @@ psycopg[binary]==3.3.5
 slowapi==0.1.10
 cachetools==6.2.1
 
+# --- Observability ---
+# Structured logging + request-id + the /ops/metrics snapshot need no deps.
+# sentry-sdk is inert unless SENTRY_DSN is set (like the LLM / Razorpay keys).
+sentry-sdk[fastapi]==2.68.1
+
 # --- Simulator / tests ---
 requests==2.32.5
 pytest==8.3.3

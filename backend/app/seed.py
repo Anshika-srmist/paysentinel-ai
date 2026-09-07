@@ -17,6 +17,10 @@ import random
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from app.observability import get_logger
+
+log = get_logger("paysentinel.seed")
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -145,8 +149,8 @@ def seed_if_empty(db: Session, count: int | None = None) -> int:
         try:
             process_event(db, row)
             made += 1
-        except Exception as exc:  # noqa: BLE001
-            print(f"[seed] scoring failed for {row.transaction_id}: {exc}")
+        except Exception:  # noqa: BLE001
+            log.exception("seed: scoring failed for %s", row.transaction_id)
 
     # Re-score the ring now that the whole cluster is visible — the earlier
     # events were scored while the pattern was still forming. (A real system
@@ -157,8 +161,8 @@ def seed_if_empty(db: Session, count: int | None = None) -> int:
         db.refresh(row)
         try:
             process_event(db, row)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[seed] re-score failed for {row.transaction_id}: {exc}")
+        except Exception:  # noqa: BLE001
+            log.exception("seed: re-score failed for %s", row.transaction_id)
 
-    print(f"[seed] inserted {made} scored events (incl. the re-scored coordinated ring)")
+    log.info("seed: inserted %d scored events (incl. the re-scored coordinated ring)", made)
     return made

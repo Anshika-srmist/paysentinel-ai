@@ -25,6 +25,9 @@ from typing import List, Literal, Tuple
 
 from app.engine.decision_engine import Decision
 from app.engine.failure_classifier import FailureCategory
+from app.observability import get_logger
+
+log = get_logger("paysentinel.explainer")
 
 try:  # optional — only needed when the LLM path is enabled
     import anthropic
@@ -173,7 +176,7 @@ def _llm_summary(ctx: ExplanationContext) -> str | None:
         text = "".join(b.text for b in resp.content if b.type == "text").strip()
         return text or None
     except Exception as exc:  # noqa: BLE001 - must never break ingestion
-        print(f"[explainer] LLM unavailable, using structured summary: {exc}")
+        log.warning("explainer: LLM unavailable, using structured summary (%s)", exc)
         return None
 
 

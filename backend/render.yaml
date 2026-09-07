@@ -23,6 +23,10 @@ services:
         value: "3.12"
       - key: DATABASE_URL
         sync: false           # set in the dashboard to the Neon connection string
+      - key: LOG_FORMAT
+        value: "json"         # structured logs in Render's log stream
+      - key: SENTRY_DSN
+        sync: false           # optional — set in the dashboard to enable error reporting
       - key: PAYSENTINEL_SEED_ON_START
         value: "1"            # no-op once the database has rows; set "0" to freeze data
       - key: PAYSENTINEL_SEED_COUNT

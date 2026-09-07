@@ -6,7 +6,6 @@ target the same database the app does, with no URL duplicated in alembic.ini.
 """
 import os
 import sys
-from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
@@ -22,8 +21,11 @@ from app.db.database import Base  # noqa: E402
 config = context.config
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# NOTE: deliberately not calling logging.config.fileConfig(config.config_file_name).
+# When migrations run from the app's startup path, the app has already
+# configured logging (app/observability.py); fileConfig's disable_existing_loggers
+# would tear that down. Alembic's own migration logs still propagate to the
+# root logger and get formatted by our handler.
 
 target_metadata = Base.metadata
 
