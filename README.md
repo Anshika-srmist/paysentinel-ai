@@ -200,6 +200,10 @@ These figures are simulated and never represented as real Razorpay data.
   synchronously. A checkout or PSP calls this and acts on the verdict.
 - **`POST /webhooks/razorpay`** — ingest real Razorpay (test-mode)
   `payment.captured` / `payment.failed` webhooks; HMAC-verified, idempotent.
+- **`POST /decisions/{id}/feedback`** — an analyst records the true outcome
+  (`fraud` / `legitimate`); `GET /feedback/summary` returns labelled accuracy.
+- **`GET /ops/metrics`** — request volume, p50/p95 latency per route, and the
+  decision mix since boot.
 - **`frontend/public/checkout.html`** — a working Razorpay test-mode checkout.
   Full loop: [`docs/RAZORPAY_TESTING.md`](docs/RAZORPAY_TESTING.md).
 
@@ -214,8 +218,11 @@ These figures are simulated and never represented as real Razorpay data.
 - **Defensive only.** High-risk decisions (`HOLD` / `VERIFY`) require human
   review; deterministic policy guardrails sit above the ML; every decision is
   auditable.
-- Feedback from analyst review is *collected for future model evaluation* — the
-  model does not auto-retrain.
+- Analyst feedback (`POST /decisions/{id}/feedback`, and a control on the
+  Investigation page) records what a transaction actually turned out to be.
+  `GET /feedback/summary` aggregates it into a labelled-accuracy view — a
+  confusion matrix over the reviewed subset. It is **not** wired to retraining;
+  the model does not learn online.
 
 ## 12. Setup
 

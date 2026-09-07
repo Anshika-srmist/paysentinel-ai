@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { PageHeader } from '../components/AppShell.jsx'
 import { Icon } from '../components/Icon.jsx'
@@ -49,9 +50,75 @@ function BreakdownBar({ label, value, color = 'var(--accent)' }) {
   )
 }
 
+function AnalystOutcome({ decisionId, feedback, onSaved }) {
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+
+  const submit = async (verdict) => {
+    setBusy(true); setErr(null)
+    try {
+      await api.submitFeedback(decisionId, { verdict, note: note.trim() || undefined })
+      setNote('')
+      onSaved()
+    } catch (e) {
+      setErr(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="card card-pad">
+      <div className="eyebrow" style={{ marginBottom: 10 }}>Analyst outcome</div>
+      {feedback ? (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className={`chip chip--sm ${feedback.verdict === 'fraud' ? 'chip--warn' : 'chip--ok'}`}>
+              <Icon name={feedback.verdict === 'fraud' ? 'alert' : 'check'} size={13} strokeWidth={2} />
+              {feedback.verdict === 'fraud' ? 'Confirmed fraud' : 'Confirmed legitimate'}
+            </span>
+            {feedback.was_correct != null && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                engine was {feedback.was_correct ? 'right' : 'wrong'}
+              </span>
+            )}
+          </div>
+          {feedback.note && <p className="secondary" style={{ fontSize: 12.5, marginTop: 8 }}>“{feedback.note}”</p>}
+          <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+            Recorded {fmtDateTime(feedback.created_at)}. Submit again to correct it. Feedback is aggregated for a
+            labelled-accuracy view — it does not auto-retrain the model.
+          </p>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button className="fpill" disabled={busy} onClick={() => submit(feedback.verdict === 'fraud' ? 'legitimate' : 'fraud')}>
+              Change verdict
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+            What did this transaction turn out to be? Records the ground truth for later evaluation.
+          </p>
+          <input
+            className="idfield" placeholder="Optional note (chargeback ref, etc.)"
+            value={note} maxLength={500} onChange={(e) => setNote(e.target.value)}
+            style={{ width: '100%', marginBottom: 10 }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="fpill fpill--hero" disabled={busy} onClick={() => submit('fraud')}>Confirm fraud</button>
+            <button className="fpill" disabled={busy} onClick={() => submit('legitimate')}>Mark legitimate</button>
+          </div>
+        </>
+      )}
+      {err && <div className="errbar" style={{ marginTop: 10 }}><Icon name="alert" size={14} /> {err}</div>}
+    </section>
+  )
+}
+
 export function Investigation() {
   const { id } = useParams()
-  const { data, error } = usePolling((signal) => api.decision(id, { signal }), 8000, [id])
+  const { data, error, refresh } = usePolling((signal) => api.decision(id, { signal }), 8000, [id])
 
   if (error && !data) {
     return (
@@ -80,7 +147,7 @@ export function Investigation() {
   const {
     event: ev, decision: dec, recommended_action, features: f = {},
     behavioral = {}, network: net = {}, explanation_sections: ex = {},
-    audit = [], risk_breakdown: rb = {},
+    audit = [], risk_breakdown: rb = {}, feedback = null,
   } = data
   const meta = metaFor(dec.decision)
   const band = riskBand(dec.risk_score)
@@ -245,6 +312,8 @@ export function Investigation() {
               </Link>
             </section>
           )}
+
+          <AnalystOutcome decisionId={dec.id} feedback={feedback} onSaved={refresh} />
 
           <section className="card card-pad">
             <div className="eyebrow" style={{ marginBottom: 10 }}>Recovery outlook</div>

@@ -34,7 +34,7 @@ from app.engine.feature_extractor import customer_baseline
 from app.engine.pipeline import process_event
 from app.integrations import razorpay as rz
 from app.models.risk_model import model_name
-from app.models.orm_models import PaymentEvent, RiskDecision, _utcnow
+from app.models.orm_models import DecisionFeedback, PaymentEvent, RiskDecision, _utcnow
 from app.models.schemas import (
     AssessRequest,
     AssessResponse,
@@ -42,6 +42,9 @@ from app.models.schemas import (
     CustomerSummary,
     DecisionDetail,
     DecisionListItem,
+    FeedbackIn,
+    FeedbackOut,
+    FeedbackSummary,
     PaymentEventIn,
     PaymentEventOut,
     RiskDecisionOut,
@@ -415,12 +418,101 @@ def _loads(s):
     return json.loads(s) if s else None
 
 
+# Which engine decisions are a clean "is this fraud" call we can score analyst
+# feedback against. RETRY / OFFER_ALTERNATIVE are failure-recovery actions, not
+# fraud calls, so feedback on them is recorded but not scored for correctness.
+_FLAGGED = {"HOLD", "VERIFY"}
+_APPROVED = {"APPROVE"}
+
+
+def _feedback_correct(engine_decision: str, verdict: str) -> bool | None:
+    flagged = engine_decision in _FLAGGED
+    approved = engine_decision in _APPROVED
+    if not (flagged or approved):
+        return None
+    if verdict == "fraud":
+        return flagged
+    return approved  # verdict == "legitimate"
+
+
+def _feedback_out(fb: DecisionFeedback, engine_decision: str) -> FeedbackOut:
+    return FeedbackOut(
+        decision_id=fb.decision_id,
+        verdict=fb.verdict,
+        note=fb.note,
+        analyst=fb.analyst,
+        created_at=fb.created_at,
+        engine_decision=engine_decision,
+        was_correct=_feedback_correct(engine_decision, fb.verdict),
+    )
+
+
+@app.post("/decisions/{decision_id}/feedback", response_model=FeedbackOut)
+@limiter.limit("60/minute")
+def submit_feedback(
+    request: Request, decision_id: int, body: FeedbackIn, db: Session = Depends(get_db)
+):
+    """Record what a transaction actually turned out to be. Re-submitting
+    replaces the previous verdict for that decision."""
+    d = db.get(RiskDecision, decision_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail="decision not found")
+
+    fb = db.query(DecisionFeedback).filter(DecisionFeedback.decision_id == decision_id).first()
+    if fb is None:
+        fb = DecisionFeedback(decision_id=decision_id)
+        db.add(fb)
+    fb.verdict = body.verdict
+    fb.note = (body.note or "").strip() or None
+    fb.analyst = (body.analyst or "").strip() or None
+    fb.created_at = _utcnow()
+    db.commit()
+    db.refresh(fb)
+    log.info("feedback: decision %s -> %s", decision_id, fb.verdict)
+    return _feedback_out(fb, d.decision)
+
+
+@app.get("/feedback/summary", response_model=FeedbackSummary)
+def feedback_summary(db: Session = Depends(get_db)):
+    rows = (
+        db.query(DecisionFeedback.verdict, RiskDecision.decision)
+        .join(RiskDecision, RiskDecision.id == DecisionFeedback.decision_id)
+        .all()
+    )
+    confusion = {"tp": 0, "fp": 0, "tn": 0, "fn": 0}
+    by_verdict: dict[str, int] = {}
+    correct = 0
+    for verdict, engine_decision in rows:
+        by_verdict[verdict] = by_verdict.get(verdict, 0) + 1
+        ok = _feedback_correct(engine_decision, verdict)
+        if ok is None:
+            continue
+        flagged = engine_decision in _FLAGGED
+        if verdict == "fraud":
+            confusion["tp" if flagged else "fn"] += 1
+        else:
+            confusion["fp" if flagged else "tn"] += 1
+        if ok:
+            correct += 1
+
+    scored = sum(confusion.values())
+    return FeedbackSummary(
+        reviewed=len(rows),
+        scored=scored,
+        correct=correct,
+        labelled_accuracy=round(correct / scored, 4) if scored else None,
+        confusion=confusion,
+        by_verdict=by_verdict,
+    )
+
+
 @app.get("/decisions/{decision_id}", response_model=DecisionDetail)
 def get_decision(decision_id: int, db: Session = Depends(get_db)):
     d = db.get(RiskDecision, decision_id)
     if d is None:
         raise HTTPException(status_code=404, detail="decision not found")
     event = db.get(PaymentEvent, d.event_id)
+    fb = db.query(DecisionFeedback).filter(DecisionFeedback.decision_id == decision_id).first()
 
     return DecisionDetail(
         event=PaymentEventOut.model_validate(event),
@@ -439,6 +531,7 @@ def get_decision(decision_id: int, db: Session = Depends(get_db)):
             "network": float(d.network_risk) if d.network_risk is not None else None,
             "rule_severity": d.rule_severity,
         },
+        feedback=_feedback_out(fb, d.decision) if fb else None,
     )
 
 

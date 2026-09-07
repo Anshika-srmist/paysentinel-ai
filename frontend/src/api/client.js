@@ -54,4 +54,7 @@ export const api = {
   networkEntity: (kind, ref, opts) => request(`/network/entity/${kind}/${encodeURIComponent(ref)}`, opts),
   scenarios: (opts) => request('/simulate/scenarios', opts),
   runScenario: (name, opts = {}) => request('/simulate/scenario', { ...opts, method: 'POST', body: { name } }),
+  submitFeedback: (decisionId, body, opts = {}) =>
+    request(`/decisions/${decisionId}/feedback`, { ...opts, method: 'POST', body }),
+  feedbackSummary: (opts) => request('/feedback/summary', opts),
 }

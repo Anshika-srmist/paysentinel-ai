@@ -67,3 +67,20 @@ class RiskDecision(Base):
     explanation_json = Column(Text, nullable=True)          # structured explanation sections
 
     created_at = Column(DateTime, default=_utcnow)
+
+
+class DecisionFeedback(Base):
+    """
+    An analyst's after-the-fact verdict on a decision: what the transaction
+    actually turned out to be. One row per decision (re-submitting replaces
+    it). This is the "feedback collected for future evaluation" — it is
+    aggregated for a labelled-accuracy view; it does not auto-retrain.
+    """
+    __tablename__ = "decision_feedback"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    decision_id = Column(Integer, ForeignKey("risk_decisions.id"), nullable=False, unique=True, index=True)
+    verdict = Column(String(20), nullable=False)   # "fraud" | "legitimate"
+    note = Column(String(500), nullable=True)
+    analyst = Column(String(60), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)

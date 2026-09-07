@@ -79,6 +79,34 @@ class DecisionDetail(BaseModel):
     explanation_sections: Dict[str, Any] = {}
     audit: List[Dict[str, Any]] = []
     risk_breakdown: Dict[str, Any] = {}      # ml / behavioral / network / rule_severity / composite
+    feedback: Optional["FeedbackOut"] = None  # analyst's recorded verdict, if any
+
+
+class FeedbackIn(BaseModel):
+    """An analyst recording what a transaction actually turned out to be."""
+    verdict: Literal["fraud", "legitimate"]
+    note: Optional[str] = Field(default=None, max_length=500)
+    analyst: Optional[str] = Field(default=None, max_length=60)
+
+
+class FeedbackOut(BaseModel):
+    decision_id: int
+    verdict: str
+    note: Optional[str] = None
+    analyst: Optional[str] = None
+    created_at: datetime
+    engine_decision: str
+    was_correct: Optional[bool] = None   # None when the decision isn't a clean fraud call (RETRY / OFFER_ALTERNATIVE)
+
+
+class FeedbackSummary(BaseModel):
+    """Aggregate over the decisions analysts have reviewed."""
+    reviewed: int
+    scored: int                          # reviewed decisions that are clean fraud calls (APPROVE / VERIFY / HOLD)
+    correct: int
+    labelled_accuracy: Optional[float] = None
+    confusion: Dict[str, int]            # tp / fp / tn / fn over the scored subset
+    by_verdict: Dict[str, int]
 
 
 class StatsSummary(BaseModel):
@@ -158,3 +186,7 @@ class AssessResponse(BaseModel):
     network_conclusion: Optional[str] = None
     model_name: Optional[str] = None
     decision_id: int
+
+
+# DecisionDetail forward-references FeedbackOut (defined after it).
+DecisionDetail.model_rebuild()
